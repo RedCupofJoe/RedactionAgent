@@ -1,10 +1,18 @@
+# Shared-platform naming for multi-agent clusters (e.g. document discovery).
+# Reserved by this stack — other agents must not reuse these for their own indexes/outputs:
+#   MinIO buckets: raw-documents, redacted-documents
+#   Qdrant collection: redaction-events
+# Prefer sharing the same MinIO / Qdrant / Granite InferenceService with distinct names.
+
 app:
   name: Auto Redaction Agent
   version: "1.0.0"
   environment: openshift
 
 storage:
+  # RESERVED: redaction source PDFs (MinIO bucket)
   raw_bucket: raw-documents
+  # RESERVED: redaction outputs (MinIO bucket)
   redacted_bucket: redacted-documents
 
 models:
@@ -19,6 +27,8 @@ redaction:
   event_score_threshold: 0.55
   burn_in: true
   fill_color: [0, 0, 0]
+  # RESERVED: Qdrant collection for event chunk embeddings
+  qdrant_collection: redaction-events
 
 rhoai:
   serving_runtime: vllm

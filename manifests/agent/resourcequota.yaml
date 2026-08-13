@@ -1,0 +1,17 @@
+# Caps CPU/memory for the redaction app tier (API + UI) so this namespace is less
+# likely to starve a co-located document discovery agent. Does not quota GPUs —
+# A100 budget is managed via the shared InferenceService replica settings.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: redaction-agent-compute
+  namespace: redaction-agent
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+spec:
+  hard:
+    pods: "12"
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi

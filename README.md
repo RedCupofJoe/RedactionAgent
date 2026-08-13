@@ -428,6 +428,37 @@ oc delete project redaction-agent minio qdrant mcp-gateway rhoai-models
 
 ---
 
+### Same cluster: document discovery agent
+
+Multiple namespaces for this stack **do not block** a second agent. Impact comes from **shared GPUs**, **Argo Application names**, and **whether discovery reuses or duplicates** MinIO / Qdrant / the SLM.
+
+**Recommended pattern:** treat MinIO, Qdrant, and the RHOAI Granite InferenceService as **shared platform**. Deploy discovery in its **own app namespace** (for example `discovery-agent`). Do **not** stand up a second always-on MinIO, Qdrant, or GPU model unless you have proven spare capacity.
+
+| Shared resource | Redaction reserves | What discovery should do |
+|-----------------|--------------------|--------------------------|
+| App namespace | `redaction-agent`, `mcp-gateway` | Use a different namespace (e.g. `discovery-agent`) |
+| MinIO (`minio`) | Buckets `raw-documents`, `redacted-documents` | Reuse the same MinIO; create **separate** buckets (do not write discovery outputs into the reserved redaction buckets unless intentional) |
+| Qdrant (`qdrant`) | Collection `redaction-events` | Reuse the same Qdrant; use a **distinct** collection name |
+| SLM (`rhoai-models` / `granite`) | 1–2× A100 via `minReplicas`/`maxReplicas` | Call the existing OpenAI-compatible endpoint (`LLM_BASE_URL`); only add another InferenceService if a free A100 remains after redaction’s replica budget |
+| Argo CD apps in `openshift-gitops` | `minio`, `qdrant`, `mcp-gateway`, `rhoai-modelservice`, `redaction-agent`, `redaction-web-ui`, `auto-redaction-root` | Name discovery apps `discovery-*` only — **never** reuse `minio` / `qdrant` / `rhoai-modelservice` |
+
+Reserved names (do not overwrite for other agents):
+
+- MinIO buckets: `raw-documents`, `redacted-documents`
+- Qdrant collection: `redaction-events`
+
+Discovery config can point at the same in-cluster endpoints redaction already uses:
+
+```text
+S3_ENDPOINT_URL=http://minio.minio.svc.cluster.local:9000
+QDRANT_URL=http://qdrant.qdrant.svc.cluster.local:6333
+LLM_BASE_URL=http://granite-predictor.rhoai-models.svc.cluster.local:80/v1
+```
+
+The `redaction-agent` namespace includes a CPU/memory `ResourceQuota` so the app tier is less likely to starve other agents’ pods. GPU capacity is **not** quota’d here — budget A100s explicitly when adding a second model.
+
+---
+
 ## Architecture
 
 ```text
@@ -477,13 +508,16 @@ docker-compose.yml       # Optional local stack
 | Variable | Purpose | Typical OpenShift value |
 |----------|---------|-------------------------|
 | `S3_ENDPOINT_URL` | MinIO API | `http://minio.minio.svc.cluster.local:9000` |
-| `S3_RAW_BUCKET` | Source PDFs | `raw-documents` |
-| `S3_REDACTED_BUCKET` | Outputs | `redacted-documents` |
+| `S3_RAW_BUCKET` | Source PDFs (**reserved**) | `raw-documents` |
+| `S3_REDACTED_BUCKET` | Outputs (**reserved**) | `redacted-documents` |
 | `QDRANT_URL` | Vector DB | `http://qdrant.qdrant.svc.cluster.local:6333` |
+| `QDRANT_COLLECTION` | Event index (**reserved**) | `redaction-events` |
 | `LLM_BASE_URL` | RHOAI vLLM OpenAI API | `http://granite-predictor.rhoai-models.svc.cluster.local:80/v1` |
 | `LLM_MODEL` | Served model name | `ibm-granite/granite-3.2-8b-instruct` |
 | `EMBEDDING_MODEL` | Chunk embeddings | `BAAI/bge-small-en-v1.5` |
 | `AGENT_API_URL` | UI → API | `http://redaction-agent.redaction-agent.svc.cluster.local:8000` |
+
+**Reserved for this agent** (other agents on the same cluster should pick different bucket/collection names): `raw-documents`, `redacted-documents`, `redaction-events`.
 
 See `.env.example` and `configs/settings.yaml`. Cluster values live in ConfigMaps/Secrets under `manifests/`.
 
