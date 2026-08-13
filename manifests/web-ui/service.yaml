@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: redaction-ui
+  namespace: redaction-agent
+  labels:
+    app: redaction-ui
+spec:
+  selector:
+    app: redaction-ui
+  ports:
+    - name: http
+      port: 8501
+      targetPort: http

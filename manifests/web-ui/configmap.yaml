@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redaction-ui-config
+  namespace: redaction-agent
+data:
+  AGENT_API_URL: "http://redaction-agent.redaction-agent.svc.cluster.local:8000"
+  S3_RAW_BUCKET: "raw-documents"
+  S3_REDACTED_BUCKET: "redacted-documents"

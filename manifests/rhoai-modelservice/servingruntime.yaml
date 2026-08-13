@@ -1,0 +1,59 @@
+# RHOAI 3.5 / KServe ServingRuntime for vLLM on NVIDIA A100
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: vllm-runtime
+  namespace: rhoai-models
+  labels:
+    opendatahub.io/dashboard: "true"
+  annotations:
+    opendatahub.io/accelerator-name: "nvidia-a100"
+    opendatahub.io/recommended-accelerators: '["nvidia.com/gpu"]'
+spec:
+  multiModel: false
+  supportedModelFormats:
+    - name: vLLM
+      version: "1"
+      autoSelect: true
+  containers:
+    - name: kserve-container
+      image: quay.io/modh/vllm:rhoai-2.16-cuda
+      # Image stream/tag may vary by RHOAI 3.5 channel; adjust to your catalog
+      command:
+        - python
+        - -m
+        - vllm.entrypoints.openai.api_server
+      args:
+        - --port=8080
+        - --model=/mnt/models
+        - --dtype=auto
+        - --max-model-len=8192
+        - --gpu-memory-utilization=0.90
+        - --served-model-name=ibm-granite/granite-3.2-8b-instruct
+      ports:
+        - containerPort: 8080
+          protocol: TCP
+      resources:
+        requests:
+          cpu: "4"
+          memory: 24Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: 48Gi
+          nvidia.com/gpu: "1"
+      env:
+        - name: HF_HOME
+          value: /tmp/hf
+        - name: TRANSFORMERS_CACHE
+          value: /tmp/hf
+      volumeMounts:
+        - name: home
+          mountPath: /home/vllm
+  volumes:
+    - name: home
+      emptyDir: {}
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule

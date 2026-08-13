@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redaction-ui
+  namespace: redaction-agent
+  labels:
+    app: redaction-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redaction-ui
+  template:
+    metadata:
+      labels:
+        app: redaction-ui
+    spec:
+      containers:
+        - name: ui
+          image: redaction-ui:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8501
+          envFrom:
+            - configMapRef:
+                name: redaction-ui-config
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

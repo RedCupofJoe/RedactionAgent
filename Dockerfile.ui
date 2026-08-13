@@ -1,0 +1,28 @@
+# Streamlit Web UI image
+FROM registry.access.redhat.com/ubi9/python-311:1-77
+
+USER 0
+WORKDIR /opt/app-root/src
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY pyproject.toml .
+COPY src ./src
+
+RUN pip install --no-cache-dir -e . && \
+    chmod -R g+w /opt/app-root/src && \
+    chown -R 1001:0 /opt/app-root/src
+
+USER 1001
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/app-root/src \
+    HOME=/tmp \
+    STREAMLIT_SERVER_PORT=8501 \
+    STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "src/ui/app.py", "--server.port=8501", "--server.address=0.0.0.0"]

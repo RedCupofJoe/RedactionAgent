@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - minio/application.yaml
+  - qdrant/application.yaml
+  - mcp-gateway/application.yaml
+  - rhoai-modelservice/application.yaml
+  - web-ui/application.yaml
+  - agent-application.yaml

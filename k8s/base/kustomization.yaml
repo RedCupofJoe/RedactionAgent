@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Aggregated view for local `kubectl apply -k`. Prefer Argo CD App-of-Apps
+# under .argocd/ for production so each component keeps its own namespace.
+resources:
+  - namespaces.yaml
+  - ../../manifests/minio
+  - ../../manifests/qdrant
+  - ../../manifests/mcp-gateway
+  - ../../manifests/rhoai-modelservice
+  - ../../manifests/agent
+  - ../../manifests/web-ui
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: auto-redaction-agent
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false

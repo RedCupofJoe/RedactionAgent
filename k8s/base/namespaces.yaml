@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redaction-agent
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minio
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: qdrant
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp-gateway
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rhoai-models
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+    opendatahub.io/dashboard: "true"

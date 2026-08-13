@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# OpenShift-specific image streams / registry paths for app workloads.
+# Infrastructure components (MinIO, Qdrant, RHOAI) keep namespaces from their manifests.
+images:
+  - name: redaction-agent
+    newName: image-registry.openshift-image-registry.svc:5000/redaction-agent/redaction-agent
+    newTag: latest
+  - name: redaction-ui
+    newName: image-registry.openshift-image-registry.svc:5000/redaction-agent/redaction-ui
+    newTag: latest
+  - name: mcp-gateway
+    newName: image-registry.openshift-image-registry.svc:5000/redaction-agent/mcp-gateway
+    newTag: latest
+
+patches:
+  - target:
+      kind: Route
+      group: route.openshift.io
+      version: v1
+    patch: |-
+      - op: add
+        path: /metadata/annotations/haproxy.router.openshift.io~1timeout
+        value: "300s"

@@ -1,0 +1,21 @@
+# Documentation ConfigMap — Accelerator / GPU node expectations for AWS + RHOAI 3.5
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rhoai-accelerator-notes
+  namespace: rhoai-models
+data:
+  README: |
+    Cluster assumptions:
+    - OpenShift 4.20 on AWS
+    - 6 nodes total; 3 worker nodes with NVIDIA A100 GPUs
+    - NVIDIA GPU Operator installed
+    - Red Hat OpenShift AI 3.5 with KServe / vLLM runtime enabled
+
+    Update InferenceService.spec.predictor.model.storageUri to point at:
+    - an OCI model artifact,
+    - an S3/MinIO model path, or
+    - a PVC-backed model directory.
+
+    Optional alternate SLM:
+    - meta-llama/Llama-3.1-8B-Instruct (requires Hugging Face token secret)

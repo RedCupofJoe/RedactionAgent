@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-create-buckets
+  namespace: minio
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-root
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-root
+                  key: rootPassword
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Waiting for MinIO..."
+              until mc alias set local http://minio.minio.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
+                sleep 3
+              done
+              mc mb --ignore-existing local/raw-documents
+              mc mb --ignore-existing local/redacted-documents
+              mc ls local
+              echo "Buckets ready."

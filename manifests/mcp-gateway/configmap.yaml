@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-gateway-config
+  namespace: mcp-gateway
+data:
+  S3_ENDPOINT_URL: "http://minio.minio.svc.cluster.local:9000"
+  S3_RAW_BUCKET: "raw-documents"
+  S3_REDACTED_BUCKET: "redacted-documents"
+  S3_SECURE: "false"
+  QDRANT_URL: "http://qdrant.qdrant.svc.cluster.local:6333"
+  QDRANT_COLLECTION: "redaction-events"
+  EMBEDDING_MODEL: "BAAI/bge-small-en-v1.5"
+  EMBEDDING_DIM: "384"
+  LLM_BASE_URL: "http://granite-predictor.rhoai-models.svc.cluster.local:80/v1"
+  LLM_MODEL: "ibm-granite/granite-3.2-8b-instruct"
+  MCP_SERVER_HOST: "0.0.0.0"
+  MCP_SERVER_PORT: "8080"
+  LOG_LEVEL: "INFO"

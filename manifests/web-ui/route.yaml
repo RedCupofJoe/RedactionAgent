@@ -1,0 +1,17 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: redaction-ui
+  namespace: redaction-agent
+  labels:
+    app: redaction-ui
+spec:
+  to:
+    kind: Service
+    name: redaction-ui
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

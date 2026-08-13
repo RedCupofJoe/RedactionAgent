@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: rhoai-models
+
+resources:
+  - servingruntime.yaml
+  - inferenceservice.yaml
+  - accelerator-profile-note.yaml

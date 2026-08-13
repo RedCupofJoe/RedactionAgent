@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redaction-agent
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/EXAMPLE/RedactionAgent.git
+    targetRevision: main
+    path: manifests/agent
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: redaction-agent
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
