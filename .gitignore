@@ -22,3 +22,7 @@ data/samples/*.pdf
 .cache/
 models/
 tmp/
+
+# Generated OpenShift Secret manifests (scripts/generate_local_secrets.sh)
+secrets/local/
+*.local.yaml

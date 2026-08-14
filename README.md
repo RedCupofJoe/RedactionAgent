@@ -128,38 +128,37 @@ oc secrets link default redhat-pull-secret --for=pull -n rhoai-models
 
 ---
 
-### Step 3 — Configure credentials (do this before first sync in production)
+### Step 3 — Configure credentials (local secrets, not in Git)
 
-Demo secrets ship with placeholder MinIO credentials. For anything beyond a lab:
+Demo plaintext Secrets are **not** committed. Generate them on your machine (output is gitignored under `secrets/local/`):
 
 ```bash
-# Strong MinIO root credentials
-oc -n minio create secret generic minio-root \
-  --from-literal=rootUser='<MINIO_USER>' \
-  --from-literal=rootPassword='<MINIO_PASSWORD>' \
-  --dry-run=client -o yaml | oc apply -f -
+chmod +x scripts/generate_local_secrets.sh
 
-# Agent / MCP consumers of MinIO + LLM
-oc -n redaction-agent create secret generic redaction-secrets \
-  --from-literal=S3_ACCESS_KEY='<MINIO_USER>' \
-  --from-literal=S3_SECRET_KEY='<MINIO_PASSWORD>' \
-  --from-literal=LLM_API_KEY='unused' \
-  --from-literal=QDRANT_API_KEY='' \
-  --dry-run=client -o yaml | oc apply -f -
+# Interactive (prompts for user/password; blank password = auto-generate)
+./scripts/generate_local_secrets.sh
 
-# Mirror the same secret into mcp-gateway if that Deployment references it
-oc -n mcp-gateway create secret generic redaction-secrets \
-  --from-literal=S3_ACCESS_KEY='<MINIO_USER>' \
-  --from-literal=S3_SECRET_KEY='<MINIO_PASSWORD>' \
-  --from-literal=LLM_API_KEY='unused' \
-  --from-literal=QDRANT_API_KEY='' \
-  --dry-run=client -o yaml | oc apply -f -
+# Or non-interactive
+export MINIO_ROOT_USER=labuser
+export MINIO_ROOT_PASSWORD='your-strong-password'
+./scripts/generate_local_secrets.sh --from-env --apply
 ```
 
-Prefer Sealed Secrets or External Secrets Operator so credentials are not committed.
+Apply without regenerating:
+
+```bash
+oc apply -f secrets/local/
+```
+
+Creates:
+
+- `minio/minio-root`
+- `redaction-agent/redaction-secrets`
+- `mcp-gateway/redaction-secrets`
+
+See [secrets/README.md](secrets/README.md). For production, prefer Sealed Secrets or External Secrets instead of long-lived local YAML.
 
 ---
-
 ### Step 4 — Point the SLM InferenceService at a real model
 
 Edit `manifests/rhoai-modelservice/inferenceservice.yaml` and set `spec.predictor.model.storageUri` to a valid source for your cluster, for example:
@@ -577,7 +576,7 @@ make test
 
 ## Security notes
 
-- In-repo MinIO credentials are **lab placeholders** — replace before any shared or production cluster.
+- MinIO / agent credentials are generated into `secrets/local/` (gitignored) via `scripts/generate_local_secrets.sh` — never commit that directory.
 - Redaction is destructive (content removed from the PDF content stream). Validate on sample FOIA packets before production use.
 - Protect UI/API Routes with OpenShift OAuth / network policies as required by your ATO.
 - Do not commit real pull secrets, HF tokens, or cloud keys.
