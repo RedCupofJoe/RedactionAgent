@@ -100,7 +100,7 @@ class RedactionAgent:
                             )
 
                 if criteria.events:
-                    emit("Indexing document chunks into Qdrant", 0.5)
+                    emit("Indexing document chunks into MinIO vector-index", 0.5)
                     self.event_processor.index_document(doc_id, pdf_bytes)
                     emit("Semantic event search + SLM confirmation", 0.65)
                     event_targets = self.event_processor.find_event_targets(

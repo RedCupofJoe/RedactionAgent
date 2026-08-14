@@ -3,7 +3,7 @@ kind: Kustomization
 
 namespace: rhoai-models
 
+# SLM is deployed from the OpenShift AI default model catalog (dashboard),
+# not from a custom InferenceService in this repo.
 resources:
-  - servingruntime.yaml
-  - inferenceservice.yaml
   - accelerator-profile-note.yaml

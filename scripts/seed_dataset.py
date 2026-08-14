@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
-"""Download sample public-record PDFs and upload them to MinIO raw-documents.
+"""Generate synthetic public-record PDFs and upload them to MinIO raw-documents.
 
-Preferred source: Hugging Face datasets / public FOIA-style samples.
-Falls back to generating synthetic government-style PDFs with PyMuPDF when
-network datasets are unavailable.
+Platform-first: no Hugging Face / external dataset downloads. Lab data is
+synthetic FOIA-style PDFs written locally and stored in MinIO (allowed).
 """
 
 from __future__ import annotations
 
 import argparse
-import io
 import logging
 import sys
 from pathlib import Path
 
 import fitz
 
-# Allow running from repo root without install
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -99,57 +96,41 @@ def render_pdf(title: str, body: str) -> bytes:
     return data
 
 
-def try_download_hf_samples(limit: int = 3) -> list[tuple[str, bytes]]:
-    """Best-effort download of public PDF-like samples from Hugging Face Hub."""
-    samples: list[tuple[str, bytes]] = []
-    try:
-        from huggingface_hub import list_repo_files, hf_hub_download
-
-        # Use a small public repo with document-like assets when available.
-        # If unavailable, caller falls back to synthetic PDFs.
-        repo_id = "hf-internal-testing/fixtures_pdf"
-        files = [f for f in list_repo_files(repo_id) if f.lower().endswith(".pdf")]
-        for rel in files[:limit]:
-            path = hf_hub_download(repo_id=repo_id, filename=rel)
-            data = Path(path).read_bytes()
-            key = f"hf/{Path(rel).name}"
-            samples.append((key, data))
-            logger.info("Downloaded HF sample: %s", key)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Hugging Face download skipped: %s", exc)
-    return samples
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed MinIO raw-documents with sample PDFs")
-    parser.add_argument("--synthetic-only", action="store_true", help="Skip Hugging Face downloads")
-    parser.add_argument("--limit", type=int, default=5, help="Max remote samples to fetch")
+    parser = argparse.ArgumentParser(
+        description="Seed MinIO raw-documents with synthetic public-record PDFs"
+    )
+    parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Write samples under data/samples/ without uploading to MinIO",
+    )
     args = parser.parse_args()
 
-    settings = get_settings()
-    s3 = S3Client(settings)
-    s3.ensure_buckets()
-
-    uploaded = 0
-    if not args.synthetic_only:
-        for key, data in try_download_hf_samples(limit=args.limit):
-            s3.upload_bytes(settings.s3_raw_bucket, key, data)
-            uploaded += 1
-
-    for sample in SAMPLE_DOCS:
-        pdf = render_pdf(sample["title"], sample["body"])
-        uri = s3.upload_bytes(settings.s3_raw_bucket, sample["key"], pdf)
-        logger.info("Uploaded synthetic sample: %s", uri)
-        uploaded += 1
-
-    # Also write a local copy for offline demos
     out_dir = ROOT / "data" / "samples"
     out_dir.mkdir(parents=True, exist_ok=True)
-    for sample in SAMPLE_DOCS:
-        path = out_dir / Path(sample["key"]).name
-        path.write_bytes(render_pdf(sample["title"], sample["body"]))
 
-    logger.info("Seed complete. Uploaded %d objects to %s", uploaded, settings.s3_raw_bucket)
+    settings = get_settings()
+    s3 = None if args.local_only else S3Client(settings)
+    if s3:
+        s3.ensure_buckets()
+
+    uploaded = 0
+    for sample in SAMPLE_DOCS:
+        pdf = render_pdf(sample["title"], sample["body"])
+        path = out_dir / Path(sample["key"]).name
+        path.write_bytes(pdf)
+        if s3:
+            uri = s3.upload_bytes(settings.s3_raw_bucket, sample["key"], pdf)
+            logger.info("Uploaded synthetic sample: %s", uri)
+            uploaded += 1
+        else:
+            logger.info("Wrote local sample: %s", path)
+
+    if s3:
+        logger.info("Seed complete. Uploaded %d objects to %s", uploaded, settings.s3_raw_bucket)
+    else:
+        logger.info("Local seed complete under %s", out_dir)
 
 
 if __name__ == "__main__":

@@ -15,28 +15,30 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # S3 / MinIO
+    # S3 / MinIO (lab-allowed object store)
     s3_endpoint_url: str = "http://localhost:9000"
     s3_access_key: str = "minioadmin"
     s3_secret_key: str = "minioadmin"
     s3_region: str = "us-east-1"
     s3_raw_bucket: str = "raw-documents"
     s3_redacted_bucket: str = "redacted-documents"
+    s3_vector_bucket: str = "vector-index"
     s3_secure: bool = False
 
-    # Qdrant
-    qdrant_url: str = "http://localhost:6333"
-    qdrant_collection: str = "redaction-events"
-    qdrant_api_key: Optional[str] = None
+    # Vector index stored in MinIO (not an external vector DB)
+    vector_collection: str = "redaction-events"
 
-    # Embeddings
-    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    # Embeddings — OpenShift AI catalog InferenceService (OpenAI-compatible)
+    # Use local:// for offline tests; otherwise catalog predictor URL.
+    embedding_base_url: str = "http://lab-embed-predictor.rhoai-models.svc.cluster.local:80/v1"
+    embedding_api_key: str = "unused"
+    embedding_model: str = "REPLACE_WITH_CATALOG_EMBEDDING_MODEL_ID"
     embedding_dim: int = 384
 
-    # LLM (RHOAI vLLM OpenAI-compatible)
-    llm_base_url: str = "http://localhost:8001/v1"
+    # LLM — OpenShift AI catalog InferenceService (OpenAI-compatible)
+    llm_base_url: str = "http://lab-slm-predictor.rhoai-models.svc.cluster.local:80/v1"
     llm_api_key: str = "unused"
-    llm_model: str = "ibm-granite/granite-3.2-8b-instruct"
+    llm_model: str = "REPLACE_WITH_CATALOG_MODEL_ID"
     llm_temperature: float = 0.1
     llm_max_tokens: int = 1024
 

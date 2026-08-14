@@ -23,12 +23,13 @@ This is the primary path. Local development is documented later.
 
 | Component | Namespace | Role |
 |-----------|-----------|------|
-| MinIO (+ console Route, bucket Job) | `minio` | Object store: `raw-documents`, `redacted-documents` |
-| Qdrant | `qdrant` | Vector index for event semantic search |
+| MinIO (+ console Route, bucket Job) | `minio` | Object store: `raw-documents`, `redacted-documents`, `vector-index` |
 | MCP Gateway | `mcp-gateway` | HTTP MCP tool surface for the agent |
-| Granite / vLLM InferenceService | `rhoai-models` | SLM for event confirmation (A100) |
+| Catalog SLM + embedding models | `rhoai-models` | Deployed from OpenShift AI **default model catalog** |
 | Agent API | `redaction-agent` | FastAPI orchestration |
 | Streamlit Web UI | `redaction-agent` | Operator dashboard + Routes |
+
+**Platform-first:** chat and embedding models come from the OpenShift AI catalog; event vectors live in MinIO. The only intentional non-platform infra in this lab is **MinIO** (plus synthetic seed data). No Qdrant, no Hugging Face runtime downloads, no custom OCI model URIs.
 
 GitOps entrypoint: **App-of-Apps** at `.argocd/root-application.yaml` → children under `.argocd/infrastructure/`.
 
@@ -47,28 +48,23 @@ oc cluster-info
 oc get pods -n openshift-gitops
 
 # RHOAI / Open Data Hub control plane (names vary slightly by install)
-oc get csv -A | grep -iE 'rhods|opendatahub|authorino|kserve' || true
+oc get csv -A | grep -iE 'rhods|opendatahub|authorino|kserve|modelregistry' || true
 oc get datasciencecluster -A
 
 # GPU nodes + NVIDIA device plugin
 oc get nodes -l nvidia.com/gpu.present=true
 oc get pods -n nvidia-gpu-operator   # or nvidia-device-plugin namespace on your cluster
 
-# StorageClass used by MinIO / Qdrant PVCs (default in manifests: gp3-csi)
+# StorageClass used by MinIO PVCs (default in manifests: gp3-csi)
 oc get storageclass
 ```
 
-If your StorageClass is not `gp3-csi`, update:
+If your StorageClass is not `gp3-csi`, update `manifests/minio/pvc.yaml`.
 
-- `manifests/minio/pvc.yaml`
-- `manifests/qdrant/pvc.yaml`
-
-If A100 product labels differ, update `nodeSelector` in:
-
-- `manifests/rhoai-modelservice/inferenceservice.yaml`
+GPU hardware profiles for catalog deploys are selected in the OpenShift AI **Deploy model** wizard (match your A100 workers).
 
 ```bash
-# Discover the exact GPU product label on your nodes
+# Discover the exact GPU product label on your nodes (for hardware profiles)
 oc get nodes -o json | jq -r '
   .items[] | select(.status.allocatable["nvidia.com/gpu"] != null) |
   "\(.metadata.name)\t\(.metadata.labels["nvidia.com/gpu.product"] // "n/a")"
@@ -112,7 +108,6 @@ Commit and push these URL changes **before** applying the root Application (Argo
 # Application namespaces (Argo can also create them via CreateNamespace=true)
 oc new-project redaction-agent
 oc new-project minio
-oc new-project qdrant
 oc new-project mcp-gateway
 oc new-project rhoai-models
 
@@ -159,27 +154,48 @@ Creates:
 See [secrets/README.md](secrets/README.md). For production, prefer Sealed Secrets or External Secrets instead of long-lived local YAML.
 
 ---
-### Step 4 — Point the SLM InferenceService at a real model
+### Step 4 — Deploy SLM + embeddings from the OpenShift AI model catalog
 
-Edit `manifests/rhoai-modelservice/inferenceservice.yaml` and set `spec.predictor.model.storageUri` to a valid source for your cluster, for example:
+Do **not** bring in custom / special model URIs or in-pod Hugging Face downloads. Use the **default model catalog** built into OpenShift AI.
 
-- OCI artifact from Red Hat AI / RHEL AI registries  
-- S3 / MinIO URI where model weights live  
-- PVC path if you pre-staged weights  
+Prerequisites:
 
-Default placeholder in-repo:
+- OpenShift AI dashboard (`dashboard: Managed`)
+- **KServe** Managed (RawDeployment)
+- **Model registry** enabled (required for Catalog in RHOAI 3.5)
+- GPU hardware profiles for your A100s
 
-```yaml
-storageUri: "oci://registry.redhat.io/rhelai1/granite-3-2-8b-instruct-fp8-nvidia-gpu@sha256:placeholder"
+#### Deploy from the catalog (UI)
+
+1. Open the **OpenShift AI** dashboard.
+2. Go to **AI hub → Models → Catalog**.
+3. Deploy **two** models into project `rhoai-models` (create it first if needed):
+   - A **generative / instruct** model → chat / event confirmation (`LLM_*`)
+   - An **embedding** model → semantic event search (`EMBEDDING_*`)
+4. For each: **Deploy model** → project `rhoai-models` → short deployment name (e.g. `lab-slm`, `lab-embed`) → GPU hardware profile → Deploy.
+5. Wait until both InferenceServices are Ready.
+
+Official reference: [Working with the model catalog](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_the_model_catalog/).
+
+#### Point the agent at the catalog deployments
+
+```bash
+oc get inferenceservice,svc -n rhoai-models
 ```
 
-Also confirm:
+Update ConfigMaps (then sync / restart pods):
 
-- `ServingRuntime` image tag in `manifests/rhoai-modelservice/servingruntime.yaml` matches your **RHOAI 3.5** catalog (`quay.io/modh/vllm:...`)
-- `nodeSelector` / tolerations match your A100 workers
-- Alternate SLM: change served model name to `meta-llama/Llama-3.1-8B-Instruct` and supply an HF token secret if required
+- [`manifests/agent/configmap.yaml`](manifests/agent/configmap.yaml)
+- [`manifests/mcp-gateway/configmap.yaml`](manifests/mcp-gateway/configmap.yaml)
 
-Commit and push the model URI change.
+```text
+LLM_BASE_URL=http://lab-slm-predictor.rhoai-models.svc.cluster.local:80/v1
+LLM_MODEL=<id from GET /v1/models on the SLM>
+EMBEDDING_BASE_URL=http://lab-embed-predictor.rhoai-models.svc.cluster.local:80/v1
+EMBEDDING_MODEL=<id from GET /v1/models on the embedder>
+```
+
+Event chunk vectors are written to MinIO bucket **`vector-index`** (created by the MinIO bucket Job). There is **no** external vector database in this lab.
 
 ---
 
@@ -249,13 +265,12 @@ argocd app get auto-redaction-root
 Child apps that should become Healthy/Synced:
 
 - `minio`
-- `qdrant`
 - `mcp-gateway`
 - `rhoai-modelservice`
 - `redaction-agent`
 - `redaction-web-ui`
 
-MinIO PostSync Job `minio-create-buckets` creates `raw-documents` and `redacted-documents`.
+MinIO PostSync Job `minio-create-buckets` creates `raw-documents`, `redacted-documents`, and `vector-index`.
 
 Manual Kustomize apply (if you are not using Argo CD yet):
 
@@ -274,20 +289,17 @@ Prefer GitOps for day-2 drift control.
 oc get pods,svc,route,pvc -n minio
 oc logs -n minio job/minio-create-buckets
 
-# Qdrant
-oc get pods,svc,pvc -n qdrant
-oc exec -n qdrant deploy/qdrant -- wget -qO- http://127.0.0.1:6333/readyz
-
 # MCP gateway
 oc get pods,svc -n mcp-gateway
 oc -n mcp-gateway port-forward svc/mcp-gateway 8080:8080
 # curl http://127.0.0.1:8080/healthz
 # curl http://127.0.0.1:8080/tools
 
-# RHOAI model
-oc get servingruntime,inferenceservice -n rhoai-models
-oc get pods -n rhoai-models -l serving.kserve.io/inferenceservice=granite
-oc logs -n rhoai-models -l serving.kserve.io/inferenceservice=granite --tail=100
+# RHOAI model (deployed from the default OpenShift AI catalog — see Step 4)
+oc get inferenceservice,svc -n rhoai-models
+ISVC=$(oc get inferenceservice -n rhoai-models -o jsonpath='{.items[0].metadata.name}')
+oc get pods -n rhoai-models -l serving.kserve.io/inferenceservice=${ISVC}
+oc logs -n rhoai-models -l serving.kserve.io/inferenceservice=${ISVC} --tail=100
 
 # Agent + UI
 oc get pods,svc,route -n redaction-agent
@@ -295,30 +307,29 @@ oc -n redaction-agent get route redaction-ui -o jsonpath='{.spec.host}{"\n"}'
 oc -n redaction-agent get route redaction-agent-api -o jsonpath='{.spec.host}{"\n"}'
 ```
 
-Smoke-test the OpenAI-compatible SLM endpoint (RawDeployment Service name may be `granite-predictor`):
+Smoke-test the OpenAI-compatible endpoint created by the catalog deploy:
 
 ```bash
-oc -n rhoai-models port-forward svc/granite-predictor 8080:80
+ISVC=$(oc get inferenceservice -n rhoai-models -o jsonpath='{.items[0].metadata.name}')
+oc -n rhoai-models port-forward svc/${ISVC}-predictor 8080:80
 
+# other terminal:
 curl -s http://127.0.0.1:8080/v1/models | jq .
+MODEL=$(curl -s http://127.0.0.1:8080/v1/models | jq -r '.data[0].id')
 curl -s http://127.0.0.1:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{
-    "model": "ibm-granite/granite-3.2-8b-instruct",
-    "messages": [{"role":"user","content":"Reply with OK"}],
-    "max_tokens": 16
-  }' | jq .
+  -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with OK\"}],\"max_tokens\":16}" | jq .
 ```
 
-Confirm ConfigMaps point `LLM_BASE_URL` at that in-cluster Service:
+Confirm ConfigMaps point `LLM_BASE_URL` / `LLM_MODEL` at that catalog deployment:
 
 - `manifests/agent/configmap.yaml`
 - `manifests/mcp-gateway/configmap.yaml`
 
-Default:
+Example (deployment name `lab-slm`):
 
 ```text
-http://granite-predictor.rhoai-models.svc.cluster.local:80/v1
+http://lab-slm-predictor.rhoai-models.svc.cluster.local:80/v1
 ```
 
 ---
@@ -337,7 +348,7 @@ export S3_SECURE=true
 
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python scripts/seed_dataset.py --synthetic-only
+python scripts/seed_dataset.py
 ```
 
 Or with `mc`:
@@ -397,7 +408,7 @@ oc -n redaction-agent set image deploy/redaction-agent api=.../redaction-agent:<
 
 **Scale the model**
 
-Edit `minReplicas` / `maxReplicas` on the InferenceService and sync.
+Adjust replicas in the OpenShift AI dashboard for the catalog deployment (or `oc edit inferenceservice -n rhoai-models`).
 
 **Rotate MinIO credentials**
 
@@ -408,7 +419,7 @@ Update Secrets in `minio`, `redaction-agent`, and `mcp-gateway`, then restart De
 ```bash
 oc delete -f .argocd/root-application.yaml
 oc delete applications -n openshift-gitops -l app.kubernetes.io/part-of=auto-redaction-agent
-oc delete project redaction-agent minio qdrant mcp-gateway rhoai-models
+oc delete project redaction-agent minio mcp-gateway rhoai-models
 ```
 
 ---
@@ -420,8 +431,8 @@ oc delete project redaction-agent minio qdrant mcp-gateway rhoai-models
 | Argo app `Unknown` / `ComparisonError` | `repoURL` reachable by Argo; path exists on `targetRevision` |
 | MinIO PVC Pending | StorageClass name; AWS volume limits |
 | Bucket Job failed | MinIO Service DNS `minio.minio.svc.cluster.local:9000`; root Secret keys |
-| InferenceService not Ready | GPU Operator; nodeSelector; `storageUri`; pull secret; vLLM logs |
-| Agent redaction fails on Events | Qdrant Ready; embedding model download; `LLM_BASE_URL` |
+| InferenceService not Ready | GPU Operator / hardware profile; catalog deploy status; cluster pull secret; vLLM logs |
+| Agent redaction fails on Events | Catalog embedder Ready; MinIO `vector-index` bucket; `EMBEDDING_*` / `LLM_*` match catalog deploys |
 | UI empty document list | Agent Route / ConfigMap `AGENT_API_URL`; MinIO credentials; seed script |
 | Route timeouts on large PDFs | Annotation `haproxy.router.openshift.io/timeout` (overlay sets `300s`) |
 
@@ -429,29 +440,28 @@ oc delete project redaction-agent minio qdrant mcp-gateway rhoai-models
 
 ### Same cluster: document discovery agent
 
-Multiple namespaces for this stack **do not block** a second agent. Impact comes from **shared GPUs**, **Argo Application names**, and **whether discovery reuses or duplicates** MinIO / Qdrant / the SLM.
+Multiple namespaces for this stack **do not block** a second agent. Impact comes from **shared GPUs**, **Argo Application names**, and **whether discovery reuses or duplicates** MinIO / catalog models.
 
-**Recommended pattern:** treat MinIO, Qdrant, and the RHOAI Granite InferenceService as **shared platform**. Deploy discovery in its **own app namespace** (for example `discovery-agent`). Do **not** stand up a second always-on MinIO, Qdrant, or GPU model unless you have proven spare capacity.
+**Recommended pattern:** treat MinIO and the OpenShift AI **catalog-deployed** SLM + embedding models as **shared platform**. Deploy discovery in its **own app namespace** (for example `discovery-agent`). Do **not** stand up a second always-on MinIO or GPU model unless you have proven spare capacity.
 
 | Shared resource | Redaction reserves | What discovery should do |
 |-----------------|--------------------|--------------------------|
 | App namespace | `redaction-agent`, `mcp-gateway` | Use a different namespace (e.g. `discovery-agent`) |
-| MinIO (`minio`) | Buckets `raw-documents`, `redacted-documents` | Reuse the same MinIO; create **separate** buckets (do not write discovery outputs into the reserved redaction buckets unless intentional) |
-| Qdrant (`qdrant`) | Collection `redaction-events` | Reuse the same Qdrant; use a **distinct** collection name |
-| SLM (`rhoai-models` / `granite`) | 1–2× A100 via `minReplicas`/`maxReplicas` | Call the existing OpenAI-compatible endpoint (`LLM_BASE_URL`); only add another InferenceService if a free A100 remains after redaction’s replica budget |
-| Argo CD apps in `openshift-gitops` | `minio`, `qdrant`, `mcp-gateway`, `rhoai-modelservice`, `redaction-agent`, `redaction-web-ui`, `auto-redaction-root` | Name discovery apps `discovery-*` only — **never** reuse `minio` / `qdrant` / `rhoai-modelservice` |
+| MinIO (`minio`) | Buckets `raw-documents`, `redacted-documents`, `vector-index` | Reuse the same MinIO; create **separate** buckets / collection prefixes |
+| Catalog SLM + embedder (`rhoai-models`) | GPU InferenceServices from the default catalog | Call the same OpenAI-compatible endpoints; only deploy another catalog model if a free A100 remains |
+| Argo CD apps in `openshift-gitops` | `minio`, `mcp-gateway`, `rhoai-modelservice`, `redaction-agent`, `redaction-web-ui`, `auto-redaction-root` | Name discovery apps `discovery-*` only — **never** reuse `minio` / `rhoai-modelservice` |
 
 Reserved names (do not overwrite for other agents):
 
-- MinIO buckets: `raw-documents`, `redacted-documents`
-- Qdrant collection: `redaction-events`
+- MinIO buckets: `raw-documents`, `redacted-documents`, `vector-index`
+- Vector collection prefix: `redaction-events`
 
 Discovery config can point at the same in-cluster endpoints redaction already uses:
 
 ```text
 S3_ENDPOINT_URL=http://minio.minio.svc.cluster.local:9000
-QDRANT_URL=http://qdrant.qdrant.svc.cluster.local:6333
-LLM_BASE_URL=http://granite-predictor.rhoai-models.svc.cluster.local:80/v1
+LLM_BASE_URL=http://<catalog-slm>-predictor.rhoai-models.svc.cluster.local:80/v1
+EMBEDDING_BASE_URL=http://<catalog-embed>-predictor.rhoai-models.svc.cluster.local:80/v1
 ```
 
 The `redaction-agent` namespace includes a CPU/memory `ResourceQuota` so the app tier is less likely to starve other agents’ pods. GPU capacity is **not** quota’d here — budget A100s explicitly when adding a second model.
@@ -466,20 +476,21 @@ The `redaction-agent` namespace includes a CPU/memory `ResourceQuota` so the app
 │ Web UI      │     │ (FastAPI)    │     │ list/fetch/extract │
 └─────────────┘     └──────┬───────┘     │ query/apply/save   │
                            │             └─────────┬──────────┘
-           ┌───────────────┼───────────────┬───────┘
-           ▼               ▼               ▼
-     ┌──────────┐   ┌────────────┐   ┌─────────────┐
-     │ MinIO    │   │ Qdrant     │   │ RHOAI vLLM  │
-     │ raw /    │   │ event      │   │ Granite 3.2 │
-     │ redacted │   │ embeddings │   │ 8B Instruct │
-     └──────────┘   └────────────┘   └─────────────┘
+           ┌───────────────┼───────────────────────┘
+           ▼               ▼
+     ┌──────────┐   ┌─────────────────────┐
+     │ MinIO    │   │ OpenShift AI catalog│
+     │ raw /    │   │ SLM + embeddings    │
+     │ redacted │   │ (default catalog)   │
+     │ vectors  │   └─────────────────────┘
+     └──────────┘
 ```
 
 **Runtime flow**
 
-1. Seed FOIA-style / synthetic PDFs into MinIO `raw-documents`.
+1. Seed synthetic FOIA-style PDFs into MinIO `raw-documents`.
 2. Operator selects files and enters Person / Place / Time / Events / Custom criteria.
-3. Agent extracts layout-aware text (PyMuPDF), matches literals/regex; for **Events**, chunks are embedded into Qdrant, retrieved semantically, confirmed by the SLM, then mapped to bounding boxes.
+3. Agent extracts layout-aware text (PyMuPDF), matches literals/regex; for **Events**, chunks are embedded via the **catalog embedding** service, stored under MinIO `vector-index`, retrieved by cosine similarity, confirmed by the **catalog SLM**, then mapped to bounding boxes.
 4. Redactions are burned in with solid black rectangles and uploaded to `redacted-documents`.
 
 ---
@@ -489,7 +500,7 @@ The `redaction-agent` namespace includes a CPU/memory `ResourceQuota` so the app
 ```text
 .argocd/                 # Argo CD App-of-Apps + child Applications
 k8s/                     # Kustomize base + OpenShift overlay
-manifests/               # Workload manifests (MinIO, Qdrant, MCP, RHOAI, agent, UI)
+manifests/               # Workload manifests (MinIO, MCP, RHOAI notes, agent, UI)
 src/agent/               # Orchestration, MCP tools, event processor
 src/services/            # S3, PDF redactor, vector store, FastAPI
 src/ui/                  # Streamlit dashboard
@@ -509,14 +520,15 @@ docker-compose.yml       # Optional local stack
 | `S3_ENDPOINT_URL` | MinIO API | `http://minio.minio.svc.cluster.local:9000` |
 | `S3_RAW_BUCKET` | Source PDFs (**reserved**) | `raw-documents` |
 | `S3_REDACTED_BUCKET` | Outputs (**reserved**) | `redacted-documents` |
-| `QDRANT_URL` | Vector DB | `http://qdrant.qdrant.svc.cluster.local:6333` |
-| `QDRANT_COLLECTION` | Event index (**reserved**) | `redaction-events` |
-| `LLM_BASE_URL` | RHOAI vLLM OpenAI API | `http://granite-predictor.rhoai-models.svc.cluster.local:80/v1` |
-| `LLM_MODEL` | Served model name | `ibm-granite/granite-3.2-8b-instruct` |
-| `EMBEDDING_MODEL` | Chunk embeddings | `BAAI/bge-small-en-v1.5` |
+| `S3_VECTOR_BUCKET` | Event vectors (**reserved**) | `vector-index` |
+| `VECTOR_COLLECTION` | Prefix in vector bucket (**reserved**) | `redaction-events` |
+| `LLM_BASE_URL` | Catalog SLM OpenAI API | `http://lab-slm-predictor.rhoai-models.svc.cluster.local:80/v1` |
+| `LLM_MODEL` | Served model id from catalog | From `GET /v1/models` after Step 4 |
+| `EMBEDDING_BASE_URL` | Catalog embedder OpenAI API | `http://lab-embed-predictor.rhoai-models.svc.cluster.local:80/v1` |
+| `EMBEDDING_MODEL` | Embedding model id from catalog | From `GET /v1/models` after Step 4 |
 | `AGENT_API_URL` | UI → API | `http://redaction-agent.redaction-agent.svc.cluster.local:8000` |
 
-**Reserved for this agent** (other agents on the same cluster should pick different bucket/collection names): `raw-documents`, `redacted-documents`, `redaction-events`.
+**Reserved for this agent** (other agents on the same cluster should pick different bucket/collection names): `raw-documents`, `redacted-documents`, `vector-index`, `redaction-events`.
 
 See `.env.example` and `configs/settings.yaml`. Cluster values live in ConfigMaps/Secrets under `manifests/`.
 
@@ -529,7 +541,7 @@ See `.env.example` and `configs/settings.yaml`. Cluster values live in ConfigMap
 | `list_s3_documents` | List bucket objects |
 | `fetch_document_bytes` | Download PDF bytes |
 | `extract_pdf_layout_and_text` | Page text + span bboxes |
-| `query_event_vector_index` | Semantic event search in Qdrant |
+| `query_event_vector_index` | Semantic event search (catalog embeddings + MinIO index) |
 | `apply_pdf_redactions` | PyMuPDF burn-in black rectangles |
 | `save_redacted_document` | Upload to `redacted-documents` |
 
@@ -555,10 +567,10 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 
-# Infrastructure
-docker compose up -d minio qdrant
+# Infrastructure (MinIO only — models come from the cluster catalog or local:// fallback)
+docker compose up -d minio
 bash scripts/setup_minio_buckets.sh
-python scripts/seed_dataset.py --synthetic-only
+python scripts/seed_dataset.py
 
 # Processes
 make api    # :8000
@@ -566,7 +578,7 @@ make ui     # :8501
 make mcp    # :8080
 ```
 
-Point `LLM_BASE_URL` at a reachable OpenAI-compatible endpoint (cluster Route via VPN, or local vLLM). If the LLM is unreachable, event confirmation falls back to a lexical heuristic so demos still run.
+Point `LLM_BASE_URL` / `EMBEDDING_BASE_URL` at catalog InferenceServices (or use `EMBEDDING_BASE_URL=local://` for offline lexical fallback). If the chat LLM is unreachable, event confirmation falls back to a lexical heuristic so demos still run.
 
 ```bash
 make test

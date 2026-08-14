@@ -6,7 +6,6 @@ kind: Kustomization
 resources:
   - namespaces.yaml
   - ../../manifests/minio
-  - ../../manifests/qdrant
   - ../../manifests/mcp-gateway
   - ../../manifests/rhoai-modelservice
   - ../../manifests/agent

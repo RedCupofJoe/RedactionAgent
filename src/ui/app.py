@@ -141,7 +141,7 @@ def main() -> None:
             Select public records, define sensitive persons, places, times, and events,
             then produce permanently redacted PDFs on Red Hat OpenShift AI.
           </p>
-          <div class="ra-badge">GitOps · MinIO · Qdrant · Granite / Llama SLM · MCP Gateway</div>
+          <div class="ra-badge">GitOps · MinIO · OpenShift AI catalog · MCP Gateway</div>
         </div>
         """,
         unsafe_allow_html=True,

@@ -42,6 +42,7 @@ class S3Client:
         targets = buckets or [
             self.settings.s3_raw_bucket,
             self.settings.s3_redacted_bucket,
+            self.settings.s3_vector_bucket,
         ]
         for bucket in targets:
             try:

@@ -8,6 +8,7 @@ MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
 MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
 RAW_BUCKET="${S3_RAW_BUCKET:-raw-documents}"
 REDACTED_BUCKET="${S3_REDACTED_BUCKET:-redacted-documents}"
+VECTOR_BUCKET="${S3_VECTOR_BUCKET:-vector-index}"
 
 if ! command -v mc >/dev/null 2>&1; then
   echo "ERROR: MinIO Client (mc) is required. Install from https://min.io/docs/minio/linux/reference/minio-mc.html"
@@ -17,7 +18,7 @@ fi
 echo "Configuring mc alias '${MINIO_ALIAS}' -> ${MINIO_ENDPOINT}"
 mc alias set "${MINIO_ALIAS}" "${MINIO_ENDPOINT}" "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"
 
-for bucket in "${RAW_BUCKET}" "${REDACTED_BUCKET}"; do
+for bucket in "${RAW_BUCKET}" "${REDACTED_BUCKET}" "${VECTOR_BUCKET}"; do
   if mc ls "${MINIO_ALIAS}/${bucket}" >/dev/null 2>&1; then
     echo "Bucket exists: ${bucket}"
   else

@@ -1,4 +1,4 @@
-"""Integration-style test: end-to-end redaction without external LLM/Qdrant."""
+"""Integration-style test: end-to-end redaction without external LLM."""
 
 from __future__ import annotations
 

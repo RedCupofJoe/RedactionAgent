@@ -1,8 +1,9 @@
 # Shared-platform naming for multi-agent clusters (e.g. document discovery).
 # Reserved by this stack — other agents must not reuse these for their own indexes/outputs:
-#   MinIO buckets: raw-documents, redacted-documents
-#   Qdrant collection: redaction-events
-# Prefer sharing the same MinIO / Qdrant / Granite InferenceService with distinct names.
+#   MinIO buckets: raw-documents, redacted-documents, vector-index
+#   Vector collection prefix: redaction-events
+# Models: deploy from OpenShift AI default model catalog (SLM + embedding).
+# Prefer sharing MinIO + catalog InferenceServices with distinct names.
 
 app:
   name: Auto Redaction Agent
@@ -14,10 +15,13 @@ storage:
   raw_bucket: raw-documents
   # RESERVED: redaction outputs (MinIO bucket)
   redacted_bucket: redacted-documents
+  # RESERVED: event chunk vectors (MinIO bucket — platform-first, no external vector DB)
+  vector_bucket: vector-index
 
 models:
-  slm: ibm-granite/granite-3.2-8b-instruct
-  embedding: BAAI/bge-small-en-v1.5
+  # Set from OpenShift AI default model catalog after deploy (GET /v1/models)
+  slm: REPLACE_WITH_CATALOG_MODEL_ID
+  embedding: REPLACE_WITH_CATALOG_EMBEDDING_MODEL_ID
   embedding_dim: 384
 
 redaction:
@@ -27,12 +31,11 @@ redaction:
   event_score_threshold: 0.55
   burn_in: true
   fill_color: [0, 0, 0]
-  # RESERVED: Qdrant collection for event chunk embeddings
-  qdrant_collection: redaction-events
+  # RESERVED: collection prefix inside vector-index bucket
+  vector_collection: redaction-events
 
 rhoai:
-  serving_runtime: vllm
+  # SLM + embeddings come from OpenShift AI default model catalog (dashboard deploy)
+  source: model-catalog
+  serving_runtime: catalog-managed
   accelerator: nvidia.com/gpu
-  gpu_count: 1
-  min_replicas: 1
-  max_replicas: 2

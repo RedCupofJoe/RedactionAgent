@@ -20,7 +20,7 @@ Options:
   --apply      Run 'oc apply -f' on the generated files after writing them
   --from-env   Read values from environment (no prompts):
                  MINIO_ROOT_USER, MINIO_ROOT_PASSWORD,
-                 LLM_API_KEY (optional), QDRANT_API_KEY (optional)
+                 LLM_API_KEY (optional), EMBEDDING_API_KEY (optional)
   -h, --help   Show this help
 
 Examples:
@@ -54,7 +54,7 @@ if [[ "${FROM_ENV}" == true ]]; then
   MINIO_ROOT_USER="${MINIO_ROOT_USER:-}"
   MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-}"
   LLM_API_KEY="${LLM_API_KEY:-unused}"
-  QDRANT_API_KEY="${QDRANT_API_KEY:-}"
+  EMBEDDING_API_KEY="${EMBEDDING_API_KEY:-unused}"
   if [[ -z "${MINIO_ROOT_USER}" || -z "${MINIO_ROOT_PASSWORD}" ]]; then
     echo "ERROR: --from-env requires MINIO_ROOT_USER and MINIO_ROOT_PASSWORD." >&2
     exit 1
@@ -75,8 +75,8 @@ else
   read -r -p "LLM API key [unused]: " LLM_API_KEY
   LLM_API_KEY="${LLM_API_KEY:-unused}"
 
-  read -r -p "Qdrant API key [empty]: " QDRANT_API_KEY
-  QDRANT_API_KEY="${QDRANT_API_KEY:-}"
+  read -r -p "Embedding API key [unused]: " EMBEDDING_API_KEY
+  EMBEDDING_API_KEY="${EMBEDDING_API_KEY:-unused}"
 fi
 
 # Escape YAML double-quoted string values (minimal)
@@ -87,7 +87,7 @@ yaml_escape() {
 USER_ESC="$(yaml_escape "${MINIO_ROOT_USER}")"
 PASS_ESC="$(yaml_escape "${MINIO_ROOT_PASSWORD}")"
 LLM_ESC="$(yaml_escape "${LLM_API_KEY}")"
-QDRANT_ESC="$(yaml_escape "${QDRANT_API_KEY}")"
+EMBED_ESC="$(yaml_escape "${EMBEDDING_API_KEY}")"
 
 cat > "${OUT_DIR}/minio-root.yaml" <<EOF
 # GENERATED — do not commit (see secrets/local/ in .gitignore)
@@ -118,7 +118,7 @@ stringData:
   S3_ACCESS_KEY: "${USER_ESC}"
   S3_SECRET_KEY: "${PASS_ESC}"
   LLM_API_KEY: "${LLM_ESC}"
-  QDRANT_API_KEY: "${QDRANT_ESC}"
+  EMBEDDING_API_KEY: "${EMBED_ESC}"
 EOF
 
 cat > "${OUT_DIR}/redaction-secrets-mcp.yaml" <<EOF
@@ -135,7 +135,7 @@ stringData:
   S3_ACCESS_KEY: "${USER_ESC}"
   S3_SECRET_KEY: "${PASS_ESC}"
   LLM_API_KEY: "${LLM_ESC}"
-  QDRANT_API_KEY: "${QDRANT_ESC}"
+  EMBEDDING_API_KEY: "${EMBED_ESC}"
 EOF
 
 chmod 600 "${OUT_DIR}"/*.yaml

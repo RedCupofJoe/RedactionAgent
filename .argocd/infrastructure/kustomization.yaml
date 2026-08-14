@@ -3,7 +3,6 @@ kind: Kustomization
 
 resources:
   - minio/application.yaml
-  - qdrant/application.yaml
   - mcp-gateway/application.yaml
   - rhoai-modelservice/application.yaml
   - web-ui/application.yaml

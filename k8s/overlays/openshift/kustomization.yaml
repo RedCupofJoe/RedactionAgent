@@ -5,7 +5,7 @@ resources:
   - ../../base
 
 # OpenShift-specific image streams / registry paths for app workloads.
-# Infrastructure components (MinIO, Qdrant, RHOAI) keep namespaces from their manifests.
+# Infrastructure components (MinIO, RHOAI catalog notes) keep namespaces from their manifests.
 images:
   - name: redaction-agent
     newName: image-registry.openshift-image-registry.svc:5000/redaction-agent/redaction-agent

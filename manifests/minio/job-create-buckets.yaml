@@ -35,5 +35,6 @@ spec:
               done
               mc mb --ignore-existing local/raw-documents
               mc mb --ignore-existing local/redacted-documents
+              mc mb --ignore-existing local/vector-index
               mc ls local
               echo "Buckets ready."

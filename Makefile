@@ -9,7 +9,7 @@ test:
 
 seed:
 	bash scripts/setup_minio_buckets.sh
-	python scripts/seed_dataset.py --synthetic-only
+	python scripts/seed_dataset.py
 
 api:
 	python -m src.services.api
