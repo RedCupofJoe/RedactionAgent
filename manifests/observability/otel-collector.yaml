@@ -1,0 +1,39 @@
+# Requires OpenShift Observability / OpenTelemetry Operator already installed.
+# The operator creates Service lab-otel-collector for this CR.
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: lab-otel
+  namespace: lab-observability
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+spec:
+  mode: deployment
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch: {}
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 15
+    exporters:
+      # Adjust if your Tempo distributor DNS differs after Observability install.
+      otlp/tempo:
+        endpoint: tempo-tempostack-distributor.openshift-tempo-operator.svc.cluster.local:4317
+        tls:
+          insecure: true
+      debug:
+        verbosity: basic
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp/tempo, debug]

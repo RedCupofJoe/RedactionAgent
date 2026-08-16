@@ -7,3 +7,5 @@ resources:
   - rhoai-modelservice/application.yaml
   - web-ui/application.yaml
   - agent-application.yaml
+  - discovery/application.yaml
+  - observability/application.yaml

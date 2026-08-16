@@ -15,8 +15,10 @@ storage:
   raw_bucket: raw-documents
   # RESERVED: redaction outputs (MinIO bucket)
   redacted_bucket: redacted-documents
-  # RESERVED: event chunk vectors (MinIO bucket — platform-first, no external vector DB)
+  # RESERVED: event chunk vectors (MinIO bucket)
   vector_bucket: vector-index
+  # RESERVED: discovery artifacts bucket
+  discovery_bucket: discovery-index
 
 models:
   # Set from OpenShift AI default model catalog after deploy (GET /v1/models)
@@ -33,9 +35,12 @@ redaction:
   fill_color: [0, 0, 0]
   # RESERVED: collection prefix inside vector-index bucket
   vector_collection: redaction-events
+  discovery_collection: discovery-events
 
 rhoai:
-  # SLM + embeddings come from OpenShift AI default model catalog (dashboard deploy)
+  # SLM + embeddings from OpenShift AI default model catalog (L4 / g6.xlarge)
   source: model-catalog
   serving_runtime: catalog-managed
   accelerator: nvidia.com/gpu
+  target_instance: g6.xlarge
+  target_gpu: NVIDIA-L4

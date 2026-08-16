@@ -26,3 +26,17 @@ metadata:
   labels:
     app.kubernetes.io/part-of: auto-redaction-agent
     opendatahub.io/dashboard: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: discovery-agent
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-observability
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent

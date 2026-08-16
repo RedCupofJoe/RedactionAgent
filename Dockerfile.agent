@@ -22,6 +22,6 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/opt/app-root/src \
     HOME=/tmp
 
-EXPOSE 8000 8080
+EXPOSE 8000 8001 8080
 
 CMD ["python", "-m", "src.services.api"]

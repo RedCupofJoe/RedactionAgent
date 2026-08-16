@@ -16,6 +16,9 @@ images:
   - name: mcp-gateway
     newName: image-registry.openshift-image-registry.svc:5000/redaction-agent/mcp-gateway
     newTag: latest
+  - name: discovery-agent
+    newName: image-registry.openshift-image-registry.svc:5000/redaction-agent/redaction-agent
+    newTag: latest
 
 patches:
   - target:

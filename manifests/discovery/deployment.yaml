@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: discovery-agent
+  namespace: discovery-agent
+  labels:
+    app: discovery-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: discovery-agent
+  template:
+    metadata:
+      labels:
+        app: discovery-agent
+      annotations:
+        sidecar.opentelemetry.io/inject: "false"
+    spec:
+      containers:
+        - name: api
+          image: discovery-agent:latest
+          imagePullPolicy: Always
+          command: ["python", "-m", "src.discovery.api"]
+          ports:
+            - name: http
+              containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: discovery-agent-config
+            - secretRef:
+                name: discovery-secrets
+                optional: true
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 4Gi

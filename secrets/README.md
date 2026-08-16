@@ -2,39 +2,23 @@
 
 Real credentials are **not** stored in Git.
 
-## Generate
+## Preferred (lab)
 
 ```bash
-./scripts/generate_local_secrets.sh
+./scripts/setup_minio.sh --apply
 ```
 
-Writes YAML under `secrets/local/` (gitignored):
+Creates gitignored files under `secrets/local/`:
 
-| File | Cluster Secret |
-|------|----------------|
-| `minio-root.yaml` | `minio/minio-root` |
-| `redaction-secrets.yaml` | `redaction-agent/redaction-secrets` |
-| `redaction-secrets-mcp.yaml` | `mcp-gateway/redaction-secrets` |
+| File | Purpose |
+|------|---------|
+| `minio-root.yaml` | MinIO admin (console) |
+| `minio-lab-user.yaml` | Lab S3 user in `minio` |
+| `redaction-secrets.yaml` | Same lab user for redaction-agent |
+| `discovery-secrets.yaml` | Same lab user for discovery-agent |
+| `mcp-secrets.yaml` | Same lab user for mcp-gateway |
+| `minio-lab-user-creds.env` | Local env for `seed_minio.sh` |
 
-Non-interactive:
+Legacy helper: `scripts/generate_local_secrets.sh` (still works for older flows).
 
-```bash
-export MINIO_ROOT_USER=labuser
-export MINIO_ROOT_PASSWORD='your-strong-password'
-./scripts/generate_local_secrets.sh --from-env
-```
-
-## Apply to OpenShift
-
-```bash
-./scripts/generate_local_secrets.sh --apply
-# or
-oc apply -f secrets/local/
-```
-
-Apply **before** or immediately after the MinIO / agent sync so pods can mount the Secrets. Argo CD does not manage these files.
-
-Committed templates (placeholders only):
-
-- `manifests/minio/secret.example.yaml`
-- `manifests/agent/secret.example.yaml`
+Apply before or with `scripts/deploy_lab.sh`. Argo does **not** commit these files.

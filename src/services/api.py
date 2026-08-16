@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from src.agent.criteria import RedactionCriteria
 from src.services.s3_client import S3Client
 from src.services.settings import get_settings
+from src.services.telemetry import setup_telemetry, start_span
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+setup_telemetry(app, service_name="redaction-agent")
 
 _jobs: dict[str, dict[str, Any]] = {}
 
@@ -113,12 +115,13 @@ def start_redaction(request: RedactionRequest) -> JobStatus:
             job["status"] = extra["status"]
 
     try:
-        result = agent.run(
-            request.documents,
-            criteria,
-            job_id=job_id,
-            progress=on_progress,
-        )
+        with start_span("redaction.run_job"):
+            result = agent.run(
+                request.documents,
+                criteria,
+                job_id=job_id,
+                progress=on_progress,
+            )
         _jobs[job_id]["results"] = [
             {
                 "source_key": r.source_key,

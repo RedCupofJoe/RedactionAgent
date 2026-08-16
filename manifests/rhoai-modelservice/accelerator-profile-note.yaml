@@ -1,5 +1,5 @@
 # Lab guidance — deploy SLM + embedding models from the OpenShift AI default catalog.
-# Do not apply hand-rolled InferenceServices with custom OCI URIs for this lab.
+# Target hardware: 3× g6.xlarge (NVIDIA L4 ~24GB). Prefer small / quantized catalog models.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,21 +9,26 @@ metadata:
     app.kubernetes.io/part-of: auto-redaction-agent
 data:
   README: |
-    Deploy models from the OpenShift AI dashboard (default model catalog only):
+    Hardware budget (lab):
+      - 3× g6.xlarge workers with NVIDIA L4 GPUs
+      - Deploy 1 small instruct SLM (1 GPU) + 1 small embedding model (1 GPU)
+      - Keep 1 GPU spare for headroom / discovery load
+
+    Deploy from OpenShift AI dashboard (default model catalog ONLY):
 
       AI hub → Models → Catalog → Deploy model
 
-    Required for this lab (both in project rhoai-models):
-      1) Generative / instruct SLM  → used as LLM_BASE_URL / LLM_MODEL
-      2) Embedding model            → used as EMBEDDING_BASE_URL / EMBEDDING_MODEL
+    Choose models that fit L4 VRAM (examples of sizing class — pick what your catalog lists):
+      - Instruct / chat: Granite or Llama ~2B–8B quantized / FP8 variants sized for 24GB
+      - Embedding: small embedding model from the same catalog
 
-    Prefer RawDeployment + GPU hardware profiles that match your A100 workers.
+    Project: rhoai-models
+    Suggested deployment names: lab-slm , lab-embed
+    Hardware profile: L4 / NVIDIA L4 profile (not A100)
 
-    After deploy:
+    After Ready:
       oc get inferenceservice,svc -n rhoai-models
-      # LLM_BASE_URL=http://<slm>-predictor.rhoai-models.svc.cluster.local:80/v1
-      # EMBEDDING_BASE_URL=http://<embed>-predictor.rhoai-models.svc.cluster.local:80/v1
+      # LLM_BASE_URL=http://lab-slm-predictor.rhoai-models.svc.cluster.local:80/v1
+      # EMBEDDING_BASE_URL=http://lab-embed-predictor.rhoai-models.svc.cluster.local:80/v1
 
-    Event vectors are stored in MinIO bucket vector-index (not an external vector DB).
-
-    See README.md Step 4.
+    Update ConfigMaps in manifests/agent, manifests/discovery, manifests/mcp-gateway.

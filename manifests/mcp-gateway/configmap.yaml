@@ -15,6 +15,8 @@ data:
   EMBEDDING_DIM: "384"
   LLM_BASE_URL: "http://lab-slm-predictor.rhoai-models.svc.cluster.local:80/v1"
   LLM_MODEL: "REPLACE_WITH_CATALOG_MODEL_ID"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://lab-otel-collector.lab-observability.svc.cluster.local:4318"
+  OTEL_SERVICE_NAME: "mcp-gateway"
   MCP_SERVER_HOST: "0.0.0.0"
   MCP_SERVER_PORT: "8080"
   LOG_LEVEL: "INFO"

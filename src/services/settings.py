@@ -23,10 +23,12 @@ class Settings(BaseSettings):
     s3_raw_bucket: str = "raw-documents"
     s3_redacted_bucket: str = "redacted-documents"
     s3_vector_bucket: str = "vector-index"
+    s3_discovery_bucket: str = "discovery-index"
     s3_secure: bool = False
 
     # Vector index stored in MinIO (not an external vector DB)
     vector_collection: str = "redaction-events"
+    discovery_collection: str = "discovery-events"
 
     # Embeddings — OpenShift AI catalog InferenceService (OpenAI-compatible)
     # Use local:// for offline tests; otherwise catalog predictor URL.

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-observability-notes
+  namespace: lab-observability
+data:
+  README: |
+    Install BEFORE syncing this app:
+      1) Red Hat OpenShift Observability / Cluster Observability Operator
+      2) Tempo (or cluster tracing) as documented for your OCP version
+      3) OpenTelemetry Operator (often bundled / companion)
+
+    Then sync Argo app lab-observability.
+
+    Agents export OTLP HTTP to:
+      http://lab-otel-collector.lab-observability.svc.cluster.local:4318
+
+    View traces in the OpenShift Observability / Tempo UI (cluster console).
+
+    If Tempo Service DNS differs, edit manifests/observability/otel-collector.yaml
+    exporter endpoint otlp/tempo.

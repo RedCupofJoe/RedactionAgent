@@ -119,11 +119,12 @@ class VectorStore:
         settings: Optional[Settings] = None,
         s3: Optional[S3Client] = None,
         embedder: Optional[CatalogEmbedder] = None,
+        collection: Optional[str] = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.s3 = s3 or S3Client(self.settings)
         self.embedder = embedder or CatalogEmbedder(self.settings)
-        self.collection = self.settings.vector_collection
+        self.collection = collection or self.settings.vector_collection
         self.bucket = self.settings.s3_vector_bucket
 
     def ensure_collection(self) -> None:
