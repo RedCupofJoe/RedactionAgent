@@ -32,13 +32,13 @@ class Settings(BaseSettings):
 
     # Embeddings — OpenShift AI catalog InferenceService (OpenAI-compatible)
     # Use local:// for offline tests; otherwise catalog predictor URL.
-    embedding_base_url: str = "http://lab-embed-predictor.rhoai-models.svc.cluster.local:80/v1"
+    embedding_base_url: str = "http://lab-embed-predictor.rhoai-models.svc.cluster.local:8080/v1"
     embedding_api_key: str = "unused"
     embedding_model: str = "REPLACE_WITH_CATALOG_EMBEDDING_MODEL_ID"
     embedding_dim: int = 384
 
     # LLM — OpenShift AI catalog InferenceService (OpenAI-compatible)
-    llm_base_url: str = "http://lab-slm-predictor.rhoai-models.svc.cluster.local:80/v1"
+    llm_base_url: str = "http://lab-slm-predictor.rhoai-models.svc.cluster.local:8080/v1"
     llm_api_key: str = "unused"
     llm_model: str = "REPLACE_WITH_CATALOG_MODEL_ID"
     llm_temperature: float = 0.1

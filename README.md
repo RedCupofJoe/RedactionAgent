@@ -158,9 +158,9 @@ oc get inferenceservice -n rhoai-models
 That prints and (with `--write`) fills:
 
 ```text
-LLM_BASE_URL=http://lab-slm-predictor.rhoai-models.svc.cluster.local:80/v1
+LLM_BASE_URL=http://lab-slm-predictor.rhoai-models.svc.cluster.local:8080/v1
 LLM_MODEL=<id from /v1/models>
-EMBEDDING_BASE_URL=http://lab-embed-predictor.rhoai-models.svc.cluster.local:80/v1
+EMBEDDING_BASE_URL=http://lab-embed-predictor.rhoai-models.svc.cluster.local:8080/v1
 EMBEDDING_MODEL=<id from /v1/models>
 ```
 

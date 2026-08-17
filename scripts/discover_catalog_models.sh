@@ -91,8 +91,8 @@ first_ready_isvc() {
 }
 
 fetch_models_json() {
-  local host="$1"
-  local url="http://${host}.${NS}.svc.cluster.local:80/v1/models"
+  local base_url="$1" # e.g. http://lab-slm-predictor.ns.svc.cluster.local:8080/v1
+  local url="${base_url%/}/models"
   local pod="catalog-models-probe-${RANDOM}"
   # Run curl in-cluster so we do not need port-forward.
   oc delete pod -n "${NS}" "${pod}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
@@ -110,10 +110,26 @@ fetch_models_json() {
     oc delete pod -n "${NS}" "${pod}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
     echo "ERROR: GET ${url} failed. Is the InferenceService Ready?" >&2
     echo "  oc get inferenceservice,pods -n ${NS}" >&2
+    echo "  Tip: headless predictor Services need port 8080 (status.address.url), not :80." >&2
     exit 1
   fi
   oc delete pod -n "${NS}" "${pod}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
   printf '%s' "${body}"
+}
+
+# OpenAI-compatible base URL (.../v1) from InferenceService status.address.url.
+# KServe headless predictors listen on 8080; :80 on the Service DNS hits the pod:80 and fails.
+isvc_openai_base_url() {
+  local name="$1"
+  local addr
+  addr=$(oc get inferenceservice -n "${NS}" "${name}" -o jsonpath='{.status.address.url}' 2>/dev/null || true)
+  if [[ -z "${addr}" ]]; then
+    local svc
+    svc=$(resolve_predictor_svc "${name}")
+    addr="http://${svc}.${NS}.svc.cluster.local:8080"
+  fi
+  # address.url is like http://host:8080 — append /v1
+  printf '%s' "${addr%/}/v1"
 }
 
 first_model_id() {
@@ -158,13 +174,13 @@ fi
 echo "SLM service:        ${SLM_SVC}"
 echo "Embedding service:  ${EMBED_SVC}"
 
-LLM_BASE_URL="http://${SLM_SVC}.${NS}.svc.cluster.local:80/v1"
-EMBEDDING_BASE_URL="http://${EMBED_SVC}.${NS}.svc.cluster.local:80/v1"
+LLM_BASE_URL=$(isvc_openai_base_url "${SLM_NAME}")
+EMBEDDING_BASE_URL=$(isvc_openai_base_url "${EMBED_NAME}")
 
 echo "Fetching ${LLM_BASE_URL}/models ..."
-LLM_MODEL=$(fetch_models_json "${SLM_SVC}" | first_model_id)
+LLM_MODEL=$(fetch_models_json "${LLM_BASE_URL}" | first_model_id)
 echo "Fetching ${EMBEDDING_BASE_URL}/models ..."
-EMBEDDING_MODEL=$(fetch_models_json "${EMBED_SVC}" | first_model_id)
+EMBEDDING_MODEL=$(fetch_models_json "${EMBEDDING_BASE_URL}" | first_model_id)
 
 echo
 echo "--- Discovered values ---"
@@ -210,6 +226,10 @@ fi
 if [[ "${APPLY}" == true ]]; then
   patch_cm() {
     local ns="$1" name="$2"
+    if ! oc get configmap -n "${ns}" "${name}" >/dev/null 2>&1; then
+      echo "SKIP ${ns}/${name} — ConfigMap not found (lab app not deployed yet)."
+      return 1
+    fi
     oc -n "${ns}" patch configmap "${name}" --type merge -p "$(python3 - <<PY
 import json
 print(json.dumps({
@@ -223,14 +243,23 @@ print(json.dumps({
 PY
 )"
     echo "Patched ${ns}/${name}"
+    return 0
   }
-  patch_cm redaction-agent redaction-agent-config
-  patch_cm discovery-agent discovery-agent-config
-  patch_cm mcp-gateway mcp-gateway-config
-  echo "Restarting deployments so pods reload ConfigMaps..."
-  oc -n redaction-agent rollout restart deploy/redaction-agent deploy/redaction-ui 2>/dev/null || true
-  oc -n discovery-agent rollout restart deploy/discovery-agent 2>/dev/null || true
-  oc -n mcp-gateway rollout restart deploy/mcp-gateway 2>/dev/null || true
+  APPLIED=0
+  patch_cm redaction-agent redaction-agent-config && APPLIED=$((APPLIED + 1)) || true
+  patch_cm discovery-agent discovery-agent-config && APPLIED=$((APPLIED + 1)) || true
+  patch_cm mcp-gateway mcp-gateway-config && APPLIED=$((APPLIED + 1)) || true
+  if [[ "${APPLIED}" -eq 0 ]]; then
+    echo
+    echo "No live ConfigMaps patched. Local --write files are updated; deploy the lab first, then re-run:"
+    echo "  ./scripts/deploy_lab.sh   # or sync Argo apps"
+    echo "  ./scripts/discover_catalog_models.sh --apply"
+  else
+    echo "Restarting deployments so pods reload ConfigMaps..."
+    oc -n redaction-agent rollout restart deploy/redaction-agent deploy/redaction-ui 2>/dev/null || true
+    oc -n discovery-agent rollout restart deploy/discovery-agent 2>/dev/null || true
+    oc -n mcp-gateway rollout restart deploy/mcp-gateway 2>/dev/null || true
+  fi
 fi
 
 if [[ "${WRITE}" != true && "${APPLY}" != true ]]; then
