@@ -178,21 +178,45 @@ GPU budget reminder: **1 GPU SLM + 1 GPU embed + 1 spare** on 3× g6e.4xlarge (1
 
 ## Step 6 — Deploy the lab with GitOps
 
-Build/push images once (internal registry example):
+### 6.1 Build and push images (from your laptop)
+
+`image-registry.openshift-image-registry.svc:5000` only resolves **inside** the cluster. From a Mac/laptop use one of these:
+
+**Option A — port-forward (works on most labs without exposing the registry):**
 
 ```bash
+# Terminal 1 — keep running
+oc port-forward -n openshift-image-registry svc/image-registry 5000:5000
+
+# Terminal 2
 oc project redaction-agent
-export REGISTRY=image-registry.openshift-image-registry.svc:5000
+oc create imagestream redaction-agent 2>/dev/null || true
+oc create imagestream redaction-ui 2>/dev/null || true
+
+export REGISTRY=localhost:5000
+podman login -u $(oc whoami) -p $(oc whoami -t) --tls-verify=false ${REGISTRY}
+
 podman build -f Dockerfile.agent -t ${REGISTRY}/redaction-agent/redaction-agent:latest .
 podman build -f Dockerfile.ui -t ${REGISTRY}/redaction-agent/redaction-ui:latest .
-podman push ${REGISTRY}/redaction-agent/redaction-agent:latest
-podman push ${REGISTRY}/redaction-agent/redaction-ui:latest
+podman push --tls-verify=false ${REGISTRY}/redaction-agent/redaction-agent:latest
+podman push --tls-verify=false ${REGISTRY}/redaction-agent/redaction-ui:latest
+
+# After push, ImageStreams exist under the redaction-agent project
 oc tag redaction-agent/redaction-agent:latest redaction-agent/mcp-gateway:latest
-# discovery uses the same agent image
-oc tag redaction-agent/redaction-agent:latest discovery-agent/discovery-agent:latest || true
+oc -n discovery-agent create imagestream discovery-agent 2>/dev/null || true
+oc tag redaction-agent/redaction-agent:latest discovery-agent/discovery-agent:latest
 ```
 
-Deploy:
+**Option B — registry default Route (cluster admin):**
+
+```bash
+oc patch configs.imageregistry.operator.openshift.io/cluster --type merge -p '{"spec":{"defaultRoute":true}}'
+export REGISTRY=$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}')
+podman login -u $(oc whoami) -p $(oc whoami -t) ${REGISTRY}
+# then build/tag/push using ${REGISTRY}/redaction-agent/...
+```
+
+### 6.2 Deploy GitOps apps
 
 ```bash
 ./scripts/deploy_lab.sh
