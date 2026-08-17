@@ -1,5 +1,5 @@
 # Lab guidance — deploy SLM + embedding models from the OpenShift AI default catalog.
-# Target hardware: 3× g6.xlarge (NVIDIA L4 ~24GB). Prefer small / quantized catalog models.
+# Target hardware: 3× g6e.4xlarge (1× NVIDIA L40S ~48GB each).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,21 +10,21 @@ metadata:
 data:
   README: |
     Hardware budget (lab):
-      - 3× g6.xlarge workers with NVIDIA L4 GPUs
-      - Deploy 1 small instruct SLM (1 GPU) + 1 small embedding model (1 GPU)
+      - 3× g6e.4xlarge workers with 1× NVIDIA L40S GPU each (~48GB)
+      - Deploy 1 instruct SLM (1 GPU) + 1 embedding model (1 GPU)
       - Keep 1 GPU spare for headroom / discovery load
 
     Deploy from OpenShift AI dashboard (default model catalog ONLY):
 
       AI hub → Models → Catalog → Deploy model
 
-    Choose models that fit L4 VRAM (examples of sizing class — pick what your catalog lists):
-      - Instruct / chat: Granite or Llama ~2B–8B quantized / FP8 variants sized for 24GB
-      - Embedding: small embedding model from the same catalog
+    Choose models that fit L40S VRAM (examples of sizing class — pick what your catalog lists):
+      - Instruct / chat: Granite or Llama ~7B–70B quantized / FP8 variants sized for ~48GB
+      - Embedding: embedding model from the same catalog (often far smaller than one L40S)
 
     Project: rhoai-models
     Suggested deployment names: lab-slm , lab-embed
-    Hardware profile: L4 / NVIDIA L4 profile (not A100)
+    Hardware profile: L40S / NVIDIA L40S profile (not A100)
 
     After Ready:
       oc get inferenceservice,svc -n rhoai-models

@@ -14,9 +14,10 @@ Checks (must pass unless noted):
   - oc login / cluster reachability
   - OpenShift GitOps Argo CD *instance* (not only the Operator)
   - Red Hat OpenShift AI (DataScienceCluster)
-  - NVIDIA GPU Operator / allocatable GPUs (prefer L4 / g6.xlarge)
+  - Node Feature Discovery (NFD) Operator + instance (required for NVIDIA GPU Operator)
+  - NVIDIA GPU Operator / allocatable GPUs (prefer L40S / g6e.4xlarge)
   - OpenShift Observability Operator (required for demo traces)
-  - NFD + StorageClass: required with --non-cloud; warn-only on cloud
+  - StorageClass: required with --non-cloud; warn-only on cloud if missing
 
 Exit code 0 = ready to deploy; non-zero = fix listed errors first.
 EOF
@@ -122,34 +123,85 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# NFD (required — NVIDIA GPU Operator ClusterPolicy waits on NFD labels)
+# ---------------------------------------------------------------------------
+NFD_OK=false
+NFD_LABELS=false
+
+# OpenShift NFD CR (nfd.openshift.io)
+if oc get nodefeaturediscovery -A --no-headers 2>/dev/null | grep -q .; then
+  NFD_OK=true
+fi
+if oc get csv -A 2>/dev/null | grep -qiE 'nfd|node-feature-discovery'; then
+  NFD_OK=true
+fi
+if oc get ns openshift-nfd >/dev/null 2>&1; then
+  if oc get pods -n openshift-nfd --no-headers 2>/dev/null | grep -qiE 'Running'; then
+    NFD_OK=true
+  fi
+fi
+if oc get pods -A 2>/dev/null | grep -qiE 'nfd-controller|nfd-master|nfd-worker|node-feature-discovery'; then
+  NFD_OK=true
+fi
+if oc api-resources 2>/dev/null | grep -qiE 'nodefeaturediscoveries|nodefeatures'; then
+  NFD_OK=true
+fi
+
+# NVIDIA-related NFD labels (formats vary by NFD version / workerConfig)
+NODE_JSON=$(oc get nodes -o json 2>/dev/null || echo '{}')
+if echo "${NODE_JSON}" | grep -qE 'feature\.node\.kubernetes\.io/pci-10de\.present|feature\.node\.kubernetes\.io/pci-0300_10de|pci-10de|vendor.?10de'; then
+  NFD_LABELS=true
+elif echo "${NODE_JSON}" | grep -qiE 'feature\.node\.kubernetes\.io/.*10de'; then
+  NFD_LABELS=true
+elif echo "${NODE_JSON}" | grep -q 'feature.node.kubernetes.io/pci-'; then
+  # Generic PCI labels present (may still satisfy newer GPU Operator)
+  NFD_LABELS=true
+fi
+
+if [[ "${NFD_LABELS}" == true ]]; then
+  ok "NFD PCI / NVIDIA feature labels present on nodes"
+elif [[ "${NFD_OK}" == true ]]; then
+  ok "Node Feature Discovery installed (NodeFeatureDiscovery / openshift-nfd)"
+  warn "NVIDIA-specific NFD labels not matched yet — GPU Operator may still be waiting"
+  hint "Verify NFD is labeling GPU workers:"
+  hint "  oc get pods -n openshift-nfd"
+  hint "  oc get nodefeaturediscovery -A"
+  hint "  oc get nodes -o json | grep -E 'pci-10de|0300_10de|feature.node.kubernetes.io/pci' | head"
+  hint "If labels appear but ClusterPolicy still says NFDLabelsMissing, restart GPU operator:"
+  hint "  oc delete pod -n nvidia-gpu-operator -l app=gpu-operator"
+else
+  fail "Node Feature Discovery (NFD) not detected"
+  hint "NFD is required for this lab. NVIDIA GPU Operator ClusterPolicy stays blocked with 'No NFD labels found' without it."
+  hint "Install from OperatorHub:"
+  hint "  1) Operators → OperatorHub → Node Feature Discovery → Install"
+  hint "  2) Installed Operators → NFD → NodeFeatureDiscovery → Create (defaults OK)"
+  hint "  3) Wait for nfd-worker pods on GPU nodes, then re-check ClusterPolicy / allocatable GPUs"
+fi
+
+# ---------------------------------------------------------------------------
 # GPU
 # ---------------------------------------------------------------------------
 ALLOC=$(oc get nodes -o jsonpath='{range .items[*]}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}' 2>/dev/null || true)
 if echo "${ALLOC}" | grep -qE '^[1-9]'; then
   ok "Nodes with allocatable nvidia.com/gpu found"
-  if oc get nodes -o json 2>/dev/null | grep -qiE 'NVIDIA-L4|Tesla-L4|L4'; then
-    ok "L4-class GPU labels detected (good for g6.xlarge lab sizing)"
+  if oc get nodes -o json 2>/dev/null | grep -qiE 'NVIDIA-L40S|L40S|g6e\.4xlarge|g6e'; then
+    ok "GPU worker labels / instance types look present (L40S / g6e.4xlarge preferred)"
   else
-    warn "No explicit L4 product label found. Lab assumes 3× g6.xlarge (L4). Verify hardware profiles."
+    warn "No explicit L40S / g6e.4xlarge label found. Lab assumes 1× NVIDIA L40S per g6e.4xlarge worker. Verify hardware profiles."
   fi
 else
   fail "No allocatable GPUs on nodes (nvidia.com/gpu)"
-  hint "Check GPU Operator / machine pool:"
-  hint "  oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu"
-  hint "  oc get csv -A | grep -i gpu"
-  hint "  oc get pods -n nvidia-gpu-operator 2>/dev/null || oc get pods -A | grep -i nvidia | head"
-  hint "  # On OpenShift AI / ROSA GPU workshops, wait until GPU MachineSet nodes are Ready"
-fi
-
-# ---------------------------------------------------------------------------
-# NFD
-# ---------------------------------------------------------------------------
-if oc get pods -A 2>/dev/null | grep -qiE 'nfd|node-feature-discovery'; then
-  ok "Node Feature Discovery appears installed"
-elif [[ "${NON_CLOUD}" == true ]]; then
-  fail "NFD required for --non-cloud labs. Install Node Feature Discovery Operator."
-else
-  warn "NFD not detected (acceptable on many managed cloud clusters)"
+  hint "NFD can be Available while GPUs are still missing — finish this sequence:"
+  hint "  1) Confirm NFD labels on GPU workers:"
+  hint "       oc get nodes -l feature.node.kubernetes.io/pci-10de.present=true"
+  hint "       oc get nodes -o json | grep -E 'pci-10de|0300_10de|feature.node.kubernetes.io/pci' | head"
+  hint "  2) Confirm ClusterPolicy left NFDLabelsMissing:"
+  hint "       oc get clusterpolicy gpu-cluster-policy -o jsonpath='{.status.conditions}' ; echo"
+  hint "  3) If labels exist but ClusterPolicy is stuck, bounce the GPU Operator:"
+  hint "       oc delete pod -n nvidia-gpu-operator -l app=gpu-operator"
+  hint "  4) Wait for driver + device-plugin DaemonSets, then:"
+  hint "       oc get pods -n nvidia-gpu-operator"
+  hint "       oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu"
 fi
 
 # ---------------------------------------------------------------------------

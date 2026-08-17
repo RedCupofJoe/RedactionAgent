@@ -38,9 +38,9 @@ redaction:
   discovery_collection: discovery-events
 
 rhoai:
-  # SLM + embeddings from OpenShift AI default model catalog (L4 / g6.xlarge)
+  # SLM + embeddings from OpenShift AI default model catalog (L40S / g6e.4xlarge)
   source: model-catalog
   serving_runtime: catalog-managed
   accelerator: nvidia.com/gpu
-  target_instance: g6.xlarge
-  target_gpu: NVIDIA-L4
+  target_instance: g6e.4xlarge
+  target_gpu: NVIDIA-L40S

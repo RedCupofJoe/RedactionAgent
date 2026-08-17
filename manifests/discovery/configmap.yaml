@@ -13,7 +13,7 @@ data:
   S3_REGION: "us-east-1"
   VECTOR_COLLECTION: "redaction-events"
   DISCOVERY_COLLECTION: "discovery-events"
-  # L4-sized catalog models (set after Step 4 deploy)
+  # L40S-sized catalog models (set after Step 5 deploy)
   EMBEDDING_BASE_URL: "http://lab-embed-predictor.rhoai-models.svc.cluster.local:80/v1"
   EMBEDDING_MODEL: "REPLACE_WITH_CATALOG_EMBEDDING_MODEL_ID"
   EMBEDDING_DIM: "384"

@@ -23,5 +23,5 @@ fi
 cd "${ROOT}"
 python3 -m pip install -q locust >/dev/null
 echo "Load test → ${REDACT_URL} users=${USERS} time=${TIME}"
-echo "On 3× L4 expect GPU/API saturation under higher concurrency."
+echo "On 3× g6e.4xlarge (L40S) expect GPU/API saturation under higher concurrency."
 locust -f tests/load/locustfile.py --host "${REDACT_URL}" --users "${USERS}" --spawn-rate "${SPAWN}" --run-time "${TIME}" --headless

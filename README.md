@@ -1,6 +1,6 @@
 # Auto Redaction + Document Discovery Lab (OpenShift AI)
 
-End-to-end lab: redact sensitive content from public-record PDFs **and** discover related passages — on **OpenShift** with **OpenShift AI**, **GitOps**, **NVIDIA L4 (g6.xlarge)**, and **OpenShift Observability**.
+End-to-end lab: redact sensitive content from public-record PDFs **and** discover related passages — on **OpenShift** with **OpenShift AI**, **GitOps**, **NVIDIA L40S (g6e.4xlarge)**, and **OpenShift Observability**.
 
 This guide assumes you are **not** an OpenShift expert. Follow the steps in order.
 
@@ -19,7 +19,7 @@ This guide assumes you are **not** an OpenShift expert. Follow the steps in orde
 
 **Platform-first:** models come from the OpenShift AI **default model catalog**. Event vectors live in MinIO. Outside pieces allowed: **MinIO** and a **Hugging Face dataset** downloaded to local `scratch/`.
 
-**Hardware target:** 3× **g6.xlarge** (NVIDIA **L4** ~24GB). Use small / quantized catalog models (1 GPU for chat, 1 for embeddings, 1 spare).
+**Hardware target:** 3× **g6e.4xlarge** (1× NVIDIA **L40S** ~48GB each). Deploy catalog models that fit one GPU (1 GPU for chat, 1 for embeddings, 1 spare).
 
 ---
 
@@ -29,21 +29,26 @@ Do **not** skip this. The lab scripts **check** these; they do **not** install t
 
 ### 0.1 Required on every cluster
 
+Install these **before** running lab scripts (order matters for GPUs):
+
 1. **Red Hat OpenShift AI** (RHOAI) — DataScienceCluster with KServe + Dashboard + Model Registry  
-2. **OpenShift GitOps** (Argo CD)  
-3. **NVIDIA GPU Operator** — GPUs allocatable on workers  
-4. **OpenShift Observability Operator** (+ Tempo / OpenTelemetry as required by your version)  
+2. **OpenShift GitOps** (Argo CD) — Operator **and** a healthy `openshift-gitops` Argo CD instance  
+3. **Node Feature Discovery (NFD)** Operator **and** a `NodeFeatureDiscovery` instance  
+   - Required so the NVIDIA GPU Operator can see GPU nodes (`feature.node.kubernetes.io/pci-10de.present`)  
+   - Without NFD, `ClusterPolicy` often stays stuck with **`No NFD labels found`** and `nvidia.com/gpu` never appears  
+   - OperatorHub → **Node Feature Discovery** → Install → create **NodeFeatureDiscovery** (defaults OK)  
+4. **NVIDIA GPU Operator** — create `ClusterPolicy` after NFD is labeling nodes; wait until workers show allocatable `nvidia.com/gpu`  
+5. **OpenShift Observability Operator** (+ Tempo / OpenTelemetry as required by your version)  
    - Install this **before** syncing the `lab-observability` Argo app  
    - Console → Operators → OperatorHub → search “Observability” / “Tempo” / “OpenTelemetry”
 
-### 0.2 Required for non-cloud / bare-metal style clusters
+### 0.2 Also required for non-cloud / bare-metal style clusters
 
 Pass `--non-cloud` to the checker later:
 
-5. **Node Feature Discovery (NFD)** Operator  
 6. **Storage** Operator / CSI with a default StorageClass  
 
-On AWS/ROSA managed storage these are often already present; the checker only **warns** unless `--non-cloud` is set.
+On AWS/ROSA managed storage these are often already present; the checker only **fails** Storage when `--non-cloud` is set and no StorageClass exists.
 
 ### 0.3 Workstation tools
 
@@ -74,6 +79,7 @@ chmod +x scripts/*.sh
 ```
 
 **Expected:** `Prerequisites OK`  
+**If FAIL on NFD:** install Node Feature Discovery, create a NodeFeatureDiscovery instance, wait for `pci-10de` labels on GPU nodes, then re-check GPU Operator / `ClusterPolicy`.  
 **If FAIL on Observability:** install the Observability Operator, wait until CSVs/pods are healthy, re-run the checker.  
 **Do not** run `deploy_lab.sh` until this passes.
 
@@ -112,13 +118,13 @@ If you already ran an older secrets step, the script **reuses** existing `secret
 
 ---
 
-## Step 5 — Deploy catalog models (L4-sized)
+## Step 5 — Deploy catalog models (L40S-sized)
 
 1. Open **OpenShift AI** dashboard → **AI hub → Models → Catalog**  
 2. Deploy into project **`rhoai-models`**:  
-   - **Instruct / chat** model that fits **L4** → name it `lab-slm`  
-   - **Embedding** model that fits **L4** → name it `lab-embed`  
-3. Pick an **L4 / NVIDIA L4** hardware profile (not A100)  
+   - **Instruct / chat** model that fits **L40S (~48GB)** → name it `lab-slm`  
+   - **Embedding** model that fits **L40S** → name it `lab-embed`  
+3. Pick an **L40S / NVIDIA L40S** hardware profile (not A100)  
 4. Wait until both InferenceServices are Ready  
 
 ```bash
@@ -141,7 +147,7 @@ EMBEDDING_BASE_URL=http://lab-embed-predictor.rhoai-models.svc.cluster.local:80/
 EMBEDDING_MODEL=<id from /v1/models>
 ```
 
-GPU budget reminder: **1 GPU SLM + 1 GPU embed + 1 spare** on 3× g6.xlarge.
+GPU budget reminder: **1 GPU SLM + 1 GPU embed + 1 spare** on 3× g6e.4xlarge (1× L40S each).
 
 ---
 
@@ -248,7 +254,7 @@ If traces never appear, check Tempo distributor DNS in `manifests/observability/
 # USERS=10 RUN_TIME=3m ./scripts/run_load_test.sh
 ```
 
-Hits `/documents`, `/redact`, and discovery `/search`. On 3× L4, higher concurrency should show API/GPU saturation — that is expected.
+Hits `/documents`, `/redact`, and discovery `/search`. On 3× L40S (g6e.4xlarge), higher concurrency should show API/GPU saturation — that is expected.
 
 ---
 
@@ -278,7 +284,7 @@ UI (tabs) → Redaction API + Discovery API
 
 | Script | Purpose |
 |--------|---------|
-| `check_prerequisites.sh` | Gate: AI, GitOps, GPU, Observability, NFD/Storage |
+| `check_prerequisites.sh` | Gate: AI, GitOps, **NFD**, GPU, Observability, Storage |
 | `configure_gitops_repo.sh` | Set Argo `repoURL` |
 | `setup_minio.sh` | Generate/apply MinIO root + lab-user Secrets |
 | `deploy_lab.sh` | Check + secrets + apply root Application |

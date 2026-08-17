@@ -104,7 +104,7 @@ def main() -> None:
 
     with st.sidebar:
         st.markdown("### OpenShift AI Lab")
-        st.caption("RHOAI · GitOps · L4 GPUs · Observability")
+        st.caption("RHOAI · GitOps · L40S GPUs · Observability")
         st.text_input("Redaction API", value=API_URL, disabled=True)
         st.text_input("Discovery API", value=DISCOVERY_URL, disabled=True)
         st.text_input("Raw bucket", value=RAW_BUCKET, disabled=True)
