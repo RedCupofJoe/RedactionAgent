@@ -1,0 +1,38 @@
+# Global RHOAI hardware profile for catalog / KServe deployments on L40S.
+# Apply once (cluster admin):
+#   oc apply -f manifests/rhoai-modelservice/hardware-profile-nvidia-l40s.yaml
+# Then re-open Deploy model — Hardware profile should list "NVIDIA L40S GPU".
+apiVersion: infrastructure.opendatahub.io/v1
+kind: HardwareProfile
+metadata:
+  name: nvidia-l40s-gpu
+  namespace: redhat-ods-applications
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+    app.opendatahub.io/hardwareprofile: "true"
+  annotations:
+    opendatahub.io/display-name: NVIDIA L40S GPU
+    opendatahub.io/description: >-
+      1× NVIDIA L40S (g6e.4xlarge). Use for lab-slm / lab-embed catalog deployments.
+    opendatahub.io/disabled: "false"
+    opendatahub.io/dashboard-feature-visibility: "[]"
+spec:
+  identifiers:
+    - displayName: CPU
+      identifier: cpu
+      resourceType: CPU
+      minCount: 2
+      defaultCount: 4
+      maxCount: 16
+    - displayName: Memory
+      identifier: memory
+      resourceType: Memory
+      minCount: 8Gi
+      defaultCount: 24Gi
+      maxCount: 96Gi
+    - displayName: NVIDIA GPU
+      identifier: nvidia.com/gpu
+      resourceType: Accelerator
+      minCount: 1
+      defaultCount: 1
+      maxCount: 1

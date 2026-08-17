@@ -120,25 +120,42 @@ If you already ran an older secrets step, the script **reuses** existing `secret
 
 ## Step 5 — Deploy catalog models (L40S-sized)
 
-1. Open **OpenShift AI** dashboard → **AI hub → Models → Catalog**  
-2. Deploy into project **`rhoai-models`**:  
-   - **Instruct / chat** model that fits **L40S (~48GB)** → name it `lab-slm`  
-   - **Embedding** model that fits **L40S** → name it `lab-embed`  
-3. Pick an **L40S / NVIDIA L40S** hardware profile (not A100)  
-4. Wait until both InferenceServices are Ready  
+### 5.0 Create an NVIDIA GPU hardware profile (once)
+
+Out of the box RHOAI only ships **`default-profile` (CPU)**. If Hardware profile is grayed out / stuck on default, create a GPU profile first:
 
 ```bash
-oc get inferenceservice,svc -n rhoai-models
-oc -n rhoai-models port-forward svc/lab-slm-predictor 8080:80
-# other terminal:
-curl -s http://127.0.0.1:8080/v1/models | jq .
+oc apply -f manifests/rhoai-modelservice/hardware-profile-nvidia-l40s.yaml
+oc get hardwareprofiles -n redhat-ods-applications
 ```
 
-Update these ConfigMaps with real model IDs and predictor URLs (then push / Argo sync, or `oc apply`):
+Or in the dashboard (as OpenShift AI admin): **Settings → Hardware profiles → Create**, add resource identifier `nvidia.com/gpu` (type Accelerator, count 1), leave visible everywhere.
 
-- `manifests/agent/configmap.yaml`  
-- `manifests/discovery/configmap.yaml`  
-- `manifests/mcp-gateway/configmap.yaml`  
+### 5.1 Deploy from the catalog
+
+1. Open **OpenShift AI** dashboard → **AI hub → Models → Catalog**  
+2. Deploy into project **`rhoai-models`**  
+3. For each model, set the **Kubernetes resource name** (not only a display name):  
+   - Instruct / chat (fits **L40S ~48GB**) → resource name **`lab-slm`**  
+   - Embedding → resource name **`lab-embed`**  
+4. In the deploy wizard, click **Edit resource name** (or equivalent) and change the auto-filled catalog name (e.g. `redhataigranite-embedding-engl`) to the names above. Leaving the catalog default breaks lab scripts that expect `lab-slm` / `lab-embed`.  
+5. Pick **NVIDIA L40S GPU** (not `default-profile` / CPU)  
+6. Wait until both InferenceServices are Ready  
+
+Verify the resource names before continuing:
+
+```bash
+oc get inferenceservice -n rhoai-models
+# Expect NAME columns: lab-slm  and  lab-embed
+```
+
+```bash
+./scripts/discover_catalog_models.sh --write
+# Optional: also patch live ConfigMaps + restart agent pods
+# ./scripts/discover_catalog_models.sh --write --apply
+```
+
+That prints and (with `--write`) fills:
 
 ```text
 LLM_BASE_URL=http://lab-slm-predictor.rhoai-models.svc.cluster.local:80/v1
@@ -146,6 +163,14 @@ LLM_MODEL=<id from /v1/models>
 EMBEDDING_BASE_URL=http://lab-embed-predictor.rhoai-models.svc.cluster.local:80/v1
 EMBEDDING_MODEL=<id from /v1/models>
 ```
+
+in:
+
+- `manifests/agent/configmap.yaml`  
+- `manifests/discovery/configmap.yaml`  
+- `manifests/mcp-gateway/configmap.yaml`  
+
+Then commit/push so Argo syncs (or rely on `--apply` for an immediate cluster patch).
 
 GPU budget reminder: **1 GPU SLM + 1 GPU embed + 1 spare** on 3× g6e.4xlarge (1× L40S each).
 
@@ -285,6 +310,7 @@ UI (tabs) → Redaction API + Discovery API
 | Script | Purpose |
 |--------|---------|
 | `check_prerequisites.sh` | Gate: AI, GitOps, **NFD**, GPU, Observability, Storage |
+| `discover_catalog_models.sh` | Resolve `LLM_*` / `EMBEDDING_*` from Ready catalog predictors |
 | `configure_gitops_repo.sh` | Set Argo `repoURL` |
 | `setup_minio.sh` | Generate/apply MinIO root + lab-user Secrets |
 | `deploy_lab.sh` | Check + secrets + apply root Application |

@@ -73,8 +73,8 @@ else
   warn "GitOps Operator controller pod not clearly detected (may still be installing)"
 fi
 
-# Application CRD
-if oc api-resources 2>/dev/null | grep -q 'applications.argoproj.io'; then
+# Application CRD (direct CRD lookup — avoid api-resources|grep -q pipefail false negatives)
+if oc get crd applications.argoproj.io >/dev/null 2>&1; then
   ok "Argo CD Application CRD available"
   CRD_OK=true
 else
@@ -222,16 +222,26 @@ fi
 # ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------
+# Prefer CRDs + install namespaces. Avoid `oc get csv -A | grep -q` under pipefail:
+# cluster-wide CSV listings are huge; grep -q exits early → oc gets SIGPIPE → false FAIL.
 OBS_OK=false
-if oc get csv -A 2>/dev/null | grep -qiE 'cluster-observability|observability-operator|tempo-operator|opentelemetry'; then
+if oc get crd opentelemetrycollectors.opentelemetry.io >/dev/null 2>&1; then
   OBS_OK=true
 fi
-if oc get pods -A 2>/dev/null | grep -qiE 'opentelemetry-operator|tempo-operator|observability-operator|coo-'; then
+if oc get crd tempostacks.tempo.grafana.com >/dev/null 2>&1; then
   OBS_OK=true
 fi
-if oc api-resources 2>/dev/null | grep -qiE 'opentelemetrycollectors|tempostacks'; then
+if oc get crd uiplugins.observability.openshift.io >/dev/null 2>&1; then
   OBS_OK=true
 fi
+for ns in openshift-cluster-observability-operator openshift-opentelemetry-operator \
+          openshift-tempo-operator node-observability-operator openshift-operators; do
+  names=$(oc get csv -n "${ns}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
+  if echo "${names}" | grep -qiE 'cluster-observability|opentelemetry|tempo-operator|node-observability'; then
+    OBS_OK=true
+    break
+  fi
+done
 if [[ "${OBS_OK}" == true ]]; then
   ok "Observability / OpenTelemetry / Tempo related operators or CRDs detected"
 else

@@ -7,3 +7,5 @@ namespace: rhoai-models
 # not from a custom InferenceService in this repo.
 resources:
   - accelerator-profile-note.yaml
+  # Apply hardware-profile-nvidia-l40s.yaml once as cluster admin (global in redhat-ods-applications).
+  # Not included in kustomize build — avoids Argo ownership of a shared RHOAI CR.

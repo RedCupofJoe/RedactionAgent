@@ -23,11 +23,20 @@ data:
       - Embedding: embedding model from the same catalog (often far smaller than one L40S)
 
     Project: rhoai-models
-    Suggested deployment names: lab-slm , lab-embed
-    Hardware profile: L40S / NVIDIA L40S profile (not A100)
+    REQUIRED Kubernetes resource names (Edit resource name in deploy wizard):
+      - Instruct / chat → lab-slm
+      - Embedding → lab-embed
+    Do not leave the catalog auto-name (e.g. redhataigranite-embedding-engl).
+    Verify: oc get inferenceservice -n rhoai-models
+    Hardware profile: NVIDIA L40S GPU (not default-profile / CPU, not A100)
+
+    If the Hardware profile control is grayed out on default only:
+      oc apply -f manifests/rhoai-modelservice/hardware-profile-nvidia-l40s.yaml
+      # or Settings → Hardware profiles → Create with identifier nvidia.com/gpu
 
     After Ready:
       oc get inferenceservice,svc -n rhoai-models
+      ./scripts/discover_catalog_models.sh --write
       # LLM_BASE_URL=http://lab-slm-predictor.rhoai-models.svc.cluster.local:80/v1
       # EMBEDDING_BASE_URL=http://lab-embed-predictor.rhoai-models.svc.cluster.local:80/v1
 
