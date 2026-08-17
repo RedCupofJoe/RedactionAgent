@@ -220,10 +220,32 @@ podman login -u $(oc whoami) -p $(oc whoami -t) ${REGISTRY}
 
 ```bash
 ./scripts/deploy_lab.sh
-oc get applications -n openshift-gitops
+# Important: use the Argo CRD — plain 'applications' is OpenShift app.k8s.io (empty/wrong)
+oc get applications.argoproj.io -n openshift-gitops
 ```
 
 **Expected child apps:** `minio`, `mcp-gateway`, `rhoai-modelservice`, `redaction-agent`, `redaction-web-ui`, `discovery-agent`, `lab-observability`.
+
+If apps show **OutOfSync** with `Forbidden` / `cannot create resource` for the `openshift-gitops-argocd-application-controller` SA:
+
+```bash
+ARGO_SA=system:serviceaccount:openshift-gitops:openshift-gitops-argocd-application-controller
+for ns in redaction-agent discovery-agent mcp-gateway minio lab-observability rhoai-models; do
+  oc get ns "$ns" >/dev/null 2>&1 || oc create ns "$ns"
+  oc label ns "$ns" argocd.argoproj.io/managed-by=openshift-gitops --overwrite
+  # managed-by Role cannot create ResourceQuotas; admin covers Deployments/Services/Routes/Quotas
+  oc adm policy add-role-to-user admin "$ARGO_SA" -n "$ns"
+done
+
+# Refresh alone is not enough after sync retries are exhausted — force a sync:
+for app in redaction-agent discovery-agent mcp-gateway lab-observability redaction-web-ui minio; do
+  oc -n openshift-gitops patch applications.argoproj.io/"$app" --type merge \
+    -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'
+done
+oc get applications.argoproj.io -n openshift-gitops
+```
+
+`deploy_lab.sh` now applies labels + admin and triggers sync automatically.
 
 If `lab-observability` fails: Observability/OpenTelemetry Operator missing or Tempo endpoint DNS wrong — see `manifests/observability/`.
 
@@ -241,15 +263,25 @@ oc -n minio get route
 ## Step 7 — Fetch Hugging Face dataset → scratch → MinIO
 
 ```bash
-./scripts/fetch_dataset.sh          # writes scratch/datasets/ (gitignored)
+./scripts/fetch_dataset.sh          # ~500 DocLayNet-v1.2 page PDFs → scratch/datasets/
 ./scripts/seed_minio.sh             # synthetic + scratch PDFs → raw-documents
 ```
 
-Override dataset:
+Default: **`docling-project/DocLayNet-v1.2`**, **`HF_DATASET_LIMIT=500`** (single-page PDFs streamed from the Hub — not the multi‑GB DocLayNet extra zip).
 
 ```bash
-HF_DATASET_REPO=hf-internal-testing/fixtures_pdf HF_DATASET_LIMIT=10 ./scripts/fetch_dataset.sh
+# lab default (500 pages)
+./scripts/fetch_dataset.sh
+
+# smaller smoke pull
+HF_DATASET_LIMIT=10 ./scripts/fetch_dataset.sh
+
+# explicit
+HF_DATASET_REPO=docling-project/DocLayNet-v1.2 HF_DATASET_LIMIT=500 HF_DATASET_SPLIT=test \
+  ./scripts/fetch_dataset.sh
 ```
+
+Passing `docling-project/DocLayNet` remaps to **v1.2** (base repo has no PDF blobs on the Hub).
 
 ---
 
@@ -311,7 +343,7 @@ Hits `/documents`, `/redact`, and discovery `/search`. On 3× L40S (g6e.4xlarge)
 
 ```bash
 oc delete -f .argocd/root-application.yaml
-oc delete applications -n openshift-gitops -l app.kubernetes.io/part-of=auto-redaction-agent
+oc delete applications.argoproj.io -n openshift-gitops -l app.kubernetes.io/part-of=auto-redaction-agent
 oc delete project redaction-agent discovery-agent minio mcp-gateway lab-observability
 # Keep rhoai-models if you want to reuse catalog deployments
 ```

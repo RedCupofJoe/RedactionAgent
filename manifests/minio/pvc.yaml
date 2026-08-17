@@ -3,6 +3,9 @@ kind: PersistentVolumeClaim
 metadata:
   name: minio-data
   namespace: minio
+  annotations:
+    # Apply PVC before Deployment; gp3 WaitForFirstConsumer stays Pending until a pod mounts it.
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   accessModes:
     - ReadWriteOnce

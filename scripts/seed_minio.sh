@@ -37,8 +37,10 @@ export S3_RAW_BUCKET="${S3_RAW_BUCKET:-raw-documents}"
 export PYTHONPATH="${ROOT}${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "Using endpoint ${S3_ENDPOINT_URL}"
-echo "Seeding synthetic samples..."
-python3 "${ROOT}/scripts/seed_dataset.py"
+echo "Seeding synthetic samples (optional FOIA demos)..."
+if ! python3 "${ROOT}/scripts/seed_dataset.py"; then
+  echo "WARN: synthetic seed failed — continuing with scratch/ DocLayNet PDFs only."
+fi
 
 if [[ -d "${SCRATCH}" ]]; then
   echo "Uploading scratch PDFs from ${SCRATCH}..."
@@ -53,11 +55,14 @@ s3 = S3Client(settings)
 s3.ensure_buckets()
 scratch = Path(os.environ["SCRATCH"])
 count = 0
-for pdf in scratch.rglob("*.pdf"):
+for pdf in sorted(scratch.rglob("*.pdf")):
     key = f"hf/{pdf.name}"
     s3.upload_bytes(settings.s3_raw_bucket, key, pdf.read_bytes())
-    print(f"Uploaded s3://{settings.s3_raw_bucket}/{key}")
     count += 1
+    if count % 25 == 0:
+        print(f"  … uploaded {count}")
+    else:
+        print(f"Uploaded s3://{settings.s3_raw_bucket}/{key}")
 print(f"Uploaded {count} scratch PDF(s)")
 '
 else

@@ -20,3 +20,5 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # Do not block the whole sync on PVC Pending (WaitForFirstConsumer needs the Deployment first)
+      - RespectIgnoreDifferences=true

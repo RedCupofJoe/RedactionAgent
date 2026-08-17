@@ -30,23 +30,44 @@ fi
 # Ensure namespaces + secrets exist before Argo syncs workloads that mount them
 bash "${ROOT}/scripts/setup_minio.sh" --apply
 
+# OpenShift GitOps only manages namespaces labeled for it (otherwise syncs fail with Forbidden).
+# The default managed-by Role also cannot create ResourceQuotas — grant admin for lab namespaces.
+LAB_NS=(redaction-agent discovery-agent mcp-gateway minio lab-observability rhoai-models)
+ARGO_SA="system:serviceaccount:openshift-gitops:openshift-gitops-argocd-application-controller"
+echo "Labeling lab namespaces for openshift-gitops + granting admin to application-controller..."
+for ns in "${LAB_NS[@]}"; do
+  oc get ns "${ns}" >/dev/null 2>&1 || oc create namespace "${ns}"
+  oc label namespace "${ns}" argocd.argoproj.io/managed-by=openshift-gitops --overwrite >/dev/null
+  oc adm policy add-role-to-user admin "${ARGO_SA}" -n "${ns}" >/dev/null
+done
+
 echo "Applying Argo CD root Application..."
 oc apply -f "${ROOT}/.argocd/root-application.yaml"
 
+# Force sync — apps that already exhausted retries stay OutOfSync until a new operation.
+ARGO_APP="applications.argoproj.io"
+echo "Triggering sync on lab Applications..."
+sleep 5
+for app in $(oc get "${ARGO_APP}" -n openshift-gitops -o name 2>/dev/null | grep -E 'redaction|discovery|mcp|minio|lab-observability|rhoai|auto-redaction' || true); do
+  oc -n openshift-gitops patch "${app}" --type merge \
+    -p '{"operation":{"initiatedBy":{"username":"deploy-lab"},"sync":{"revision":"HEAD"}}}' >/dev/null 2>&1 || true
+done
+
 echo "Waiting for Argo Applications (up to ~5m)..."
+# NOTE: use applications.argoproj.io — bare 'applications' is OpenShift app.k8s.io, not Argo CD.
 for i in $(seq 1 60); do
-  apps=$(oc get applications -n openshift-gitops -l app.kubernetes.io/part-of=auto-redaction-agent --no-headers 2>/dev/null | wc -l | tr -d ' ')
+  apps=$(oc get "${ARGO_APP}" -n openshift-gitops -l app.kubernetes.io/part-of=auto-redaction-agent --no-headers 2>/dev/null | wc -l | tr -d ' ')
   if [[ "${apps}" -ge 1 ]]; then
-    oc get applications -n openshift-gitops -l app.kubernetes.io/part-of=auto-redaction-agent || \
-      oc get applications -n openshift-gitops
+    oc get "${ARGO_APP}" -n openshift-gitops -l app.kubernetes.io/part-of=auto-redaction-agent || \
+      oc get "${ARGO_APP}" -n openshift-gitops
     break
   fi
-  # root app may create children without the label initially
-  oc get applications -n openshift-gitops 2>/dev/null | head -20 || true
+  oc get "${ARGO_APP}" -n openshift-gitops 2>/dev/null | head -20 || true
   sleep 5
 done
 
 echo
-echo "Watch sync: oc get applications -n openshift-gitops -w"
+echo "Watch sync: oc get applications.argoproj.io -n openshift-gitops -w"
+echo "  (do not use plain 'oc get applications' — that lists app.k8s.io, not Argo CD)"
 echo "UI route (when Ready): oc -n redaction-agent get route redaction-ui"
-echo "Next: deploy catalog models (README Step 4), then scripts/fetch_dataset.sh && scripts/seed_minio.sh"
+echo "Next: deploy catalog models (README Step 5), then scripts/fetch_dataset.sh && scripts/seed_minio.sh"

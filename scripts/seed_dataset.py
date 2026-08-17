@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import argparse
 import logging
+import subprocess
 import sys
 from pathlib import Path
 
-import fitz
+try:
+    import fitz
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "pymupdf"])
+    import fitz
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
