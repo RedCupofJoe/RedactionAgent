@@ -267,6 +267,19 @@ oc -n minio get route
 ./scripts/seed_minio.sh             # synthetic + scratch PDFs → raw-documents
 ```
 
+If `seed_minio.sh` fails with `InvalidAccessKeyId` / `HeadBucket` 403, the MinIO PostSync Job never created buckets or the lab user (OpenShift non-root: `mc` needs `HOME=/tmp`). Fix and re-run:
+
+```bash
+# After pulling the job-create-buckets.yaml fix (HOME + MC_CONFIG_DIR=/tmp):
+oc delete job -n minio minio-create-buckets --force --grace-period=0
+oc delete pod -n minio -l job-name=minio-create-buckets --force --grace-period=0
+oc apply -f manifests/minio/job-create-buckets.yaml
+oc wait -n minio --for=condition=complete job/minio-create-buckets --timeout=120s
+./scripts/seed_minio.sh
+```
+
+`seed_minio.sh` will also fall back to MinIO **root** from `secrets/local/minio-root.yaml` when the lab user is missing, so you can upload PDFs before the Job is healthy. Agents still need the lab user + policy once the Job succeeds.
+
 Default: **`docling-project/DocLayNet-v1.2`**, **`HF_DATASET_LIMIT=500`** (single-page PDFs streamed from the Hub — not the multi‑GB DocLayNet extra zip).
 
 ```bash

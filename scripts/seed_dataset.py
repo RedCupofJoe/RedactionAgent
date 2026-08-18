@@ -23,6 +23,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+try:
+    import boto3  # noqa: F401
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "boto3", "pydantic-settings", "pyyaml"])
+
 from src.services.s3_client import S3Client  # noqa: E402
 from src.services.settings import get_settings  # noqa: E402
 
