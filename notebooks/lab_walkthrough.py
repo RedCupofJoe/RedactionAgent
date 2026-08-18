@@ -33,6 +33,16 @@ DISCOVERY = os.getenv(
     "DISCOVERY_API_URL",
     "http://discovery-agent.discovery-agent.svc.cluster.local:8001",
 )
+
+try:
+    import httpx
+except ImportError:
+    import subprocess
+    import sys
+
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "httpx"])
+    import httpx
+
 client = httpx.Client(timeout=120.0, verify=False)
 
 print("Redaction API:", REDACT)

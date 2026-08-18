@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: redaction-agent:latest
+          image: image-registry.openshift-image-registry.svc:5000/redaction-agent/redaction-agent:latest
           imagePullPolicy: Always
           command: ["python", "-m", "src.services.api"]
           ports:

@@ -1,4 +1,4 @@
-.PHONY: install test seed check deploy smoke load ui api
+.PHONY: install test seed check deploy smoke load workbench ui api
 
 install:
 	pip install -r requirements.txt
@@ -23,6 +23,9 @@ smoke:
 
 load:
 	bash scripts/run_load_test.sh
+
+workbench:
+	bash scripts/setup_workbench.sh
 
 api:
 	python -m src.services.api

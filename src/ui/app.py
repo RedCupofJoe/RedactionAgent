@@ -31,22 +31,60 @@ def _inject_styles() -> None:
         """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+        /* Prefer light chrome so Streamlit does not paint white text on our light page. */
+        html { color-scheme: light !important; }
         html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
         .stApp {
+          color: #1b1f24;
           background:
             radial-gradient(1200px 600px at 10% -10%, rgba(196,0,0,0.08), transparent 55%),
             linear-gradient(180deg, #f7f8fa 0%, #eef1f4 100%);
         }
-        .ra-brand { font-size: 2rem; font-weight: 700; color: #1b1f24; margin: 0; }
-        .ra-brand span { color: #c40000; }
-        .ra-sub { color: #5c6670; font-size: 1.02rem; max-width: 52rem; }
+        /* Main content: force readable dark text (overrides OS/browser dark theme). */
+        section.main,
+        section.main p,
+        section.main span,
+        section.main label,
+        section.main li,
+        section.main h1,
+        section.main h2,
+        section.main h3,
+        section.main h4,
+        section.main .stMarkdown,
+        section.main [data-testid="stMarkdownContainer"],
+        section.main [data-testid="stWidgetLabel"],
+        section.main [data-testid="stCaptionContainer"],
+        section.main [data-baseweb="tab"],
+        section.main [data-baseweb="tab"] * {
+          color: #1b1f24 !important;
+        }
+        section.main input,
+        section.main textarea,
+        section.main select {
+          color: #1b1f24 !important;
+          background-color: #ffffff !important;
+        }
+        section.main .stCodeBlock,
+        section.main code,
+        section.main pre {
+          color: #1b1f24 !important;
+        }
+        .ra-brand { font-size: 2rem; font-weight: 700; color: #1b1f24 !important; margin: 0; }
+        .ra-brand span { color: #c40000 !important; }
+        .ra-sub { color: #5c6670 !important; font-size: 1.02rem; max-width: 52rem; }
         .ra-badge {
           display: inline-block; margin-top: 0.75rem;
-          font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: #8f0000;
+          font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: #8f0000 !important;
           border-left: 3px solid #c40000; padding-left: 0.55rem;
         }
         div[data-testid="stSidebar"] { background: #1b1f24; }
-        div[data-testid="stSidebar"] * { color: #f2f4f6 !important; }
+        div[data-testid="stSidebar"],
+        div[data-testid="stSidebar"] p,
+        div[data-testid="stSidebar"] span,
+        div[data-testid="stSidebar"] label,
+        div[data-testid="stSidebar"] * {
+          color: #f2f4f6 !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,

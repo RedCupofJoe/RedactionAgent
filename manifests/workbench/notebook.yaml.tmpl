@@ -1,0 +1,79 @@
+# Templated by scripts/setup_workbench.sh (placeholders __NS__, __NAME__, __DASHBOARD__, __IMAGE__, __IMAGE_TAG__).
+# Relies on notebooks.opendatahub.io/inject-oauth so the controller injects the OAuth sidecar.
+apiVersion: kubeflow.org/v1
+kind: Notebook
+metadata:
+  name: __NAME__
+  namespace: __NS__
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+    app.kubernetes.io/component: workbench
+  annotations:
+    notebooks.opendatahub.io/inject-oauth: "true"
+    notebooks.opendatahub.io/oauth-logout-url: "https://__DASHBOARD__/projects/__NS__?notebookLogout=__NAME__"
+    openshift.io/display-name: "Lab walkthrough"
+    openshift.io/description: "Step 9 audience demo — redaction + discovery APIs"
+    opendatahub.io/image-display-name: "Standard Data Science"
+    notebooks.opendatahub.io/last-image-selection: "s2i-generic-data-science-notebook:__IMAGE_TAG__"
+    notebooks.opendatahub.io/last-size-selection: Small
+    opendatahub.io/accelerator-name: ""
+spec:
+  template:
+    spec:
+      containers:
+        - name: __NAME__
+          image: __IMAGE__
+          imagePullPolicy: Always
+          workingDir: /opt/app-root/src
+          ports:
+            - name: notebook-port
+              containerPort: 8888
+              protocol: TCP
+          env:
+            - name: JUPYTER_IMAGE
+              value: __IMAGE__
+            - name: REDACT_API_URL
+              value: "http://redaction-agent.redaction-agent.svc.cluster.local:8000"
+            - name: DISCOVERY_API_URL
+              value: "http://discovery-agent.discovery-agent.svc.cluster.local:8001"
+            - name: NOTEBOOK_ARGS
+              value: |-
+                --ServerApp.port=8888
+                --ServerApp.token=''
+                --ServerApp.password=''
+                --ServerApp.base_url=/notebook/__NS__/__NAME__
+                --ServerApp.quit_button=False
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          readinessProbe:
+            httpGet:
+              path: /notebook/__NS__/__NAME__/api
+              port: notebook-port
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /notebook/__NS__/__NAME__/api
+              port: notebook-port
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: __NAME__
+              mountPath: /opt/app-root/src
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: __NAME__
+          persistentVolumeClaim:
+            claimName: __NAME__
+        - name: shm
+          emptyDir:
+            medium: Memory
+      enableServiceLinks: false

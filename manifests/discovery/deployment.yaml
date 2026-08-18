@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: discovery-agent:latest
+          image: image-registry.openshift-image-registry.svc:5000/discovery-agent/discovery-agent:latest
           imagePullPolicy: Always
           command: ["python", "-m", "src.discovery.api"]
           ports:

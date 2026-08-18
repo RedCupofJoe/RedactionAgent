@@ -182,39 +182,32 @@ GPU budget reminder: **1 GPU SLM + 1 GPU embed + 1 spare** on 3× g6e.4xlarge (1
 
 `image-registry.openshift-image-registry.svc:5000` only resolves **inside** the cluster. From a Mac/laptop use one of these:
 
-**Option A — port-forward (works on most labs without exposing the registry):**
-
-```bash
-# Terminal 1 — keep running
-oc port-forward -n openshift-image-registry svc/image-registry 5000:5000
-
-# Terminal 2
-oc project redaction-agent
-oc create imagestream redaction-agent 2>/dev/null || true
-oc create imagestream redaction-ui 2>/dev/null || true
-
-export REGISTRY=localhost:5000
-podman login -u $(oc whoami) -p $(oc whoami -t) --tls-verify=false ${REGISTRY}
-
-podman build -f Dockerfile.agent -t ${REGISTRY}/redaction-agent/redaction-agent:latest .
-podman build -f Dockerfile.ui -t ${REGISTRY}/redaction-agent/redaction-ui:latest .
-podman push --tls-verify=false ${REGISTRY}/redaction-agent/redaction-agent:latest
-podman push --tls-verify=false ${REGISTRY}/redaction-agent/redaction-ui:latest
-
-# After push, ImageStreams exist under the redaction-agent project
-oc tag redaction-agent/redaction-agent:latest redaction-agent/mcp-gateway:latest
-oc -n discovery-agent create imagestream discovery-agent 2>/dev/null || true
-oc tag redaction-agent/redaction-agent:latest discovery-agent/discovery-agent:latest
-```
-
-**Option B — registry default Route (cluster admin):**
+**Option A — registry default Route (recommended on Mac; port-forward often drops mid-push):**
 
 ```bash
 oc patch configs.imageregistry.operator.openshift.io/cluster --type merge -p '{"spec":{"defaultRoute":true}}'
 export REGISTRY=$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}')
-podman login -u $(oc whoami) -p $(oc whoami -t) ${REGISTRY}
-# then build/tag/push using ${REGISTRY}/redaction-agent/...
+# OpenShift accepts any username + a valid token
+podman login -u unused -p "$(oc whoami -t)" "${REGISTRY}"
+
+oc project redaction-agent
+oc create imagestream redaction-agent 2>/dev/null || true
+oc create imagestream redaction-ui 2>/dev/null || true
+
+# Apple Silicon: must target amd64 or pods CrashLoop with "Exec format error"
+podman build --platform linux/amd64 -f Dockerfile.agent -t ${REGISTRY}/redaction-agent/redaction-agent:latest .
+podman build --platform linux/amd64 -f Dockerfile.ui -t ${REGISTRY}/redaction-agent/redaction-ui:latest .
+podman push ${REGISTRY}/redaction-agent/redaction-agent:latest
+podman push ${REGISTRY}/redaction-agent/redaction-ui:latest
+
+oc tag redaction-agent/redaction-agent:latest redaction-agent/mcp-gateway:latest
+oc -n discovery-agent create imagestream discovery-agent 2>/dev/null || true
+oc tag redaction-agent/redaction-agent:latest discovery-agent/discovery-agent:latest
+oc set image-lookup -n redaction-agent redaction-agent redaction-ui
+oc rollout restart -n redaction-agent deployment/redaction-ui deployment/redaction-agent
 ```
+
+**Option B — port-forward** (if you cannot enable the default Route): keep `oc port-forward -n openshift-image-registry svc/image-registry 5000:5000` running, use `REGISTRY=127.0.0.1:5000` (not `localhost`, which can hit IPv6), and the same `--platform linux/amd64` builds/pushes with `--tls-verify=false`.
 
 ### 6.2 Deploy GitOps apps
 
@@ -315,9 +308,31 @@ Smoke test from laptop:
 
 ## Step 9 — Jupyter workbench notebook
 
-1. In OpenShift AI, create a **Workbench** (Python) in `rhoai-models` or a lab project  
-2. Upload / clone `notebooks/lab_walkthrough.ipynb`  
-3. Set `REDACT_API_URL` / `DISCOVERY_API_URL` to Routes **or** use in-cluster DNS defaults in the notebook  
+Automate this before a live demo:
+
+```bash
+./scripts/setup_workbench.sh
+```
+
+That script:
+
+1. Labels `rhoai-models` as an OpenShift AI Data Science project  
+2. Creates PVC + **Workbench** (`Notebook` CR) with in-cluster `REDACT_API_URL` / `DISCOVERY_API_URL`  
+3. Waits until Running, copies `notebooks/lab_walkthrough.ipynb` into the workbench home  
+4. Prints dashboard / notebook URLs and a short talk track  
+
+Useful flags:
+
+```bash
+./scripts/setup_workbench.sh --seed-only   # re-copy notebook into an existing workbench
+./scripts/setup_workbench.sh --delete      # tear down workbench + PVC
+```
+
+Manual alternative:
+
+1. In OpenShift AI, create a **Workbench** (Python / Standard Data Science) in `rhoai-models`  
+2. Upload `notebooks/lab_walkthrough.ipynb`  
+3. Set `REDACT_API_URL` / `DISCOVERY_API_URL` to Routes **or** use the in-cluster DNS defaults  
 4. Run all cells — health, list docs, redact, discovery  
 
 Companion script: `notebooks/lab_walkthrough.py`
@@ -382,6 +397,7 @@ UI (tabs) → Redaction API + Discovery API
 | `discover_catalog_models.sh` | Resolve `LLM_*` / `EMBEDDING_*` from Ready catalog predictors |
 | `configure_gitops_repo.sh` | Set Argo `repoURL` |
 | `setup_minio.sh` | Generate/apply MinIO root + lab-user Secrets |
+| `setup_workbench.sh` | Step 9: create RHOAI workbench + seed walkthrough notebook |
 | `deploy_lab.sh` | Check + secrets + apply root Application |
 | `fetch_dataset.sh` | HF → `scratch/datasets/` |
 | `seed_minio.sh` | Upload synthetic + scratch PDFs |

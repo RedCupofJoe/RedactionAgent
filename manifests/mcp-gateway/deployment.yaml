@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: mcp-gateway
-          image: mcp-gateway:latest
+          image: image-registry.openshift-image-registry.svc:5000/redaction-agent/mcp-gateway:latest
           imagePullPolicy: Always
           command: ["python", "-m", "src.agent.mcp_gateway"]
           ports:
