@@ -1,6 +1,6 @@
 # Auto Redaction + Document Discovery Lab (OpenShift AI)
 
-End-to-end lab: redact sensitive content from public-record PDFs **and** discover related passages — on **OpenShift** with **OpenShift AI**, **GitOps**, **NVIDIA L40S (g6e.4xlarge)**, and **OpenShift Observability**.
+End-to-end lab: redact sensitive content from public-record PDFs **and** discover related passages — on **OpenShift** with **OpenShift AI**, **GitOps**, **NVIDIA L40S (g6e.4xlarge)**, and **distributed tracing** (Tempo + OpenTelemetry + Observe → Traces).
 
 This guide assumes you are **not** an OpenShift expert. Follow the steps in order.
 
@@ -15,7 +15,7 @@ This guide assumes you are **not** an OpenShift expert. Follow the steps in orde
 | `redaction-agent` | Redaction API + Streamlit UI (two tabs) |
 | `discovery-agent` | Document Discovery API |
 | `mcp-gateway` | MCP tool gateway |
-| `lab-observability` | OpenTelemetry Collector (needs Observability Operator first) |
+| `lab-observability` | TempoMonolithic + OpenTelemetry Collector (needs Tempo + OpenTelemetry operators first; UIPlugin is separate) |
 
 **Platform-first:** models come from the OpenShift AI **default model catalog**. Event vectors live in MinIO. Outside pieces allowed: **MinIO** and a **Hugging Face dataset** downloaded to local `scratch/`.
 
@@ -38,9 +38,11 @@ Install these **before** running lab scripts (order matters for GPUs):
    - Without NFD, `ClusterPolicy` often stays stuck with **`No NFD labels found`** and `nvidia.com/gpu` never appears  
    - OperatorHub → **Node Feature Discovery** → Install → create **NodeFeatureDiscovery** (defaults OK)  
 4. **NVIDIA GPU Operator** — create `ClusterPolicy` after NFD is labeling nodes; wait until workers show allocatable `nvidia.com/gpu`  
-5. **OpenShift Observability Operator** (+ Tempo / OpenTelemetry as required by your version)  
-   - Install this **before** syncing the `lab-observability` Argo app  
-   - Console → Operators → OperatorHub → search “Observability” / “Tempo” / “OpenTelemetry”
+5. **Tracing operators** (install **before** syncing `lab-observability`):  
+   - **Tempo Operator** — for `TempoMonolithic`  
+   - **OpenTelemetry Operator** — for `OpenTelemetryCollector`  
+   - **Cluster Observability Operator** — for the console **Observe → Traces** `UIPlugin`  
+   - OperatorHub → search “Tempo”, “OpenTelemetry”, “Cluster Observability”
 
 ### 0.2 Also required for non-cloud / bare-metal style clusters
 
@@ -74,13 +76,15 @@ You should already have the repo locally if you followed earlier lab steps (thro
 ```bash
 chmod +x scripts/*.sh
 ./scripts/check_prerequisites.sh
-# Non-cloud:
+# Non-cloud (StorageClass becomes a hard FAIL if missing):
 # ./scripts/check_prerequisites.sh --non-cloud
+# Skip tracing checks (not recommended for the full lab):
+# ./scripts/check_prerequisites.sh --skip-observability
 ```
 
 **Expected:** `Prerequisites OK`  
 **If FAIL on NFD:** install Node Feature Discovery, create a NodeFeatureDiscovery instance, wait for `pci-10de` labels on GPU nodes, then re-check GPU Operator / `ClusterPolicy`.  
-**If FAIL on Observability:** install the Observability Operator, wait until CSVs/pods are healthy, re-run the checker.  
+**If FAIL on Observability:** install Tempo, OpenTelemetry, and Cluster Observability operators; wait until CSVs/pods are healthy; re-run the checker.  
 **Do not** run `deploy_lab.sh` until this passes.
 
 ---
@@ -109,8 +113,9 @@ Creates gitignored files under `secrets/local/` and applies them to the cluster.
 **What this does**
 
 - `minio-root` Secret — MinIO **admin** (console login)  
-- `minio-lab-user` + mirrored Secrets in `redaction-agent`, `discovery-agent`, `mcp-gateway` — app S3 credentials  
-- Buckets (via MinIO PostSync Job after deploy): `raw-documents`, `redacted-documents`, `vector-index`, `discovery-index`  
+- `minio-lab-user` + mirrored Secrets in `redaction-agent`, `discovery-agent`, `mcp-gateway` — app S3 access keys  
+
+Buckets and the MinIO lab user/policy are **not** created here. After MinIO syncs (Step 6), the PostSync Job `minio-create-buckets` creates: `raw-documents`, `redacted-documents`, `vector-index`, `discovery-index`.
 
 If you already ran an older secrets step, the script **reuses** existing `secrets/local` files unless you pass `--force`.
 
@@ -172,6 +177,19 @@ in:
 
 Then commit/push so Argo syncs (or rely on `--apply` for an immediate cluster patch).
 
+### 5.2 Optional — AI Playground (safe)
+
+You can enable the OpenShift AI **Playground** against the existing **`lab-slm`** deployment without breaking the lab. Agents keep using in-cluster URLs (`lab-slm-predictor…` / `lab-embed-predictor…`); Playground is just another client on the same InferenceService.
+
+1. In OpenShift AI, open **`lab-slm`** in project **`rhoai-models`**.  
+2. Enable **Publish as AI asset endpoint** (surfaces **AI Assets** + **Playground**).  
+3. Leave the Kubernetes resource name as **`lab-slm`**.  
+4. Leave **token authentication** off for the lab (agents use plain in-cluster HTTP today).  
+5. Hard-refresh the dashboard (`Cmd/Ctrl + Shift + R`) or log out/in if Playground does not list the model yet.  
+6. Do **not** deploy a third GPU catalog model just for Playground — this cluster has **3× L40S** and the lab already uses **2 GPUs**.
+
+Playground chat shares `lab-slm`, so heavy use during Steps 8–11 can raise redaction/discovery latency. Avoid renaming or deleting `lab-slm` / `lab-embed`.
+
 GPU budget reminder: **1 GPU SLM + 1 GPU embed + 1 spare** on 3× g6e.4xlarge (1× L40S each).
 
 ---
@@ -202,9 +220,13 @@ podman push ${REGISTRY}/redaction-agent/redaction-ui:latest
 
 oc tag redaction-agent/redaction-agent:latest redaction-agent/mcp-gateway:latest
 oc -n discovery-agent create imagestream discovery-agent 2>/dev/null || true
+# Discovery reuses the agent image (same Dockerfile.agent)
 oc tag redaction-agent/redaction-agent:latest discovery-agent/discovery-agent:latest
-oc set image-lookup -n redaction-agent redaction-agent redaction-ui
+oc set image-lookup -n redaction-agent redaction-agent redaction-ui mcp-gateway
+oc set image-lookup -n discovery-agent discovery-agent
 oc rollout restart -n redaction-agent deployment/redaction-ui deployment/redaction-agent
+oc rollout restart -n mcp-gateway deployment/mcp-gateway
+oc rollout restart -n discovery-agent deployment/discovery-agent
 ```
 
 **Option B — port-forward** (if you cannot enable the default Route): keep `oc port-forward -n openshift-image-registry svc/image-registry 5000:5000` running, use `REGISTRY=127.0.0.1:5000` (not `localhost`, which can hit IPv6), and the same `--platform linux/amd64` builds/pushes with `--tls-verify=false`.
@@ -217,9 +239,14 @@ oc rollout restart -n redaction-agent deployment/redaction-ui deployment/redacti
 oc get applications.argoproj.io -n openshift-gitops
 ```
 
+`deploy_lab.sh` runs prerequisites, applies MinIO secrets, labels lab namespaces + grants the Argo application-controller `admin`, applies the root Application, and force-syncs child apps.
+
 **Expected child apps:** `minio`, `mcp-gateway`, `rhoai-modelservice`, `redaction-agent`, `redaction-web-ui`, `discovery-agent`, `lab-observability`.
 
+**Note:** `lab-observability` may have **automated sync disabled** in Git (so a bad collector config cannot selfHeal back). `deploy_lab.sh` still force-syncs it once; otherwise run `oc apply -k manifests/observability/` or patch-sync that Application manually. The console **UIPlugin** is **not** in that kustomize — apply it once with Step 10.1.
+
 If apps show **OutOfSync** with `Forbidden` / `cannot create resource` for the `openshift-gitops-argocd-application-controller` SA:
+
 
 ```bash
 ARGO_SA=system:serviceaccount:openshift-gitops:openshift-gitops-argocd-application-controller
@@ -238,11 +265,19 @@ done
 oc get applications.argoproj.io -n openshift-gitops
 ```
 
-`deploy_lab.sh` now applies labels + admin and triggers sync automatically.
+`deploy_lab.sh` already applies labels + admin and triggers sync when you run it normally.
 
-If `lab-observability` fails: Observability/OpenTelemetry Operator missing or Tempo endpoint DNS wrong — see `manifests/observability/`.
+If `lab-observability` fails: Tempo/OpenTelemetry Operator missing, or collector cannot reach the Tempo gateway — see `manifests/observability/` and Step 10.
+
+After MinIO is Synced, confirm the bucket Job completed:
+
+```bash
+oc get job -n minio minio-create-buckets
+oc logs -n minio job/minio-create-buckets --tail=50
+```
 
 Routes:
+
 
 ```bash
 oc -n redaction-agent get route redaction-ui
@@ -260,10 +295,11 @@ oc -n minio get route
 ./scripts/seed_minio.sh             # synthetic + scratch PDFs → raw-documents
 ```
 
-If `seed_minio.sh` fails with `InvalidAccessKeyId` / `HeadBucket` 403, the MinIO PostSync Job never created buckets or the lab user (OpenShift non-root: `mc` needs `HOME=/tmp`). Fix and re-run:
+If `seed_minio.sh` fails with `InvalidAccessKeyId` / `HeadBucket` 403, the MinIO PostSync Job never created buckets or the lab user (OpenShift non-root: `mc` needs `HOME=/tmp` and `MC_CONFIG_DIR=/tmp/.mc`). Fix and re-run:
+
 
 ```bash
-# After pulling the job-create-buckets.yaml fix (HOME + MC_CONFIG_DIR=/tmp):
+# After pulling the job-create-buckets.yaml fix (HOME=/tmp, MC_CONFIG_DIR=/tmp/.mc):
 oc delete job -n minio minio-create-buckets --force --grace-period=0
 oc delete pod -n minio -l job-name=minio-create-buckets --force --grace-period=0
 oc apply -f manifests/minio/job-create-buckets.yaml
@@ -298,7 +334,7 @@ Open the `redaction-ui` Route.
 1. **Redaction Agent** tab — select documents, enter Person / Place / Time / Events / Custom, run redaction, preview  
 2. **Document Discovery Agent** tab — enter a query (optionally re-index), view scored snippets + summaries  
 
-Smoke test from laptop:
+Smoke test from laptop (redaction health + `/documents`; discovery health + `/search` if the route exists — does **not** call `/redact`):
 
 ```bash
 ./scripts/smoke_test.sh
@@ -332,6 +368,8 @@ From this repo (workbench must be Running):
 # If you have more than one workbench:
 ./scripts/setup_workbench.sh --name <workbench-name>
 ./scripts/setup_workbench.sh --list
+# Default project is rhoai-models; override with:
+# ./scripts/setup_workbench.sh --namespace <project> --name <workbench-name>
 ```
 
 That copies `notebooks/lab_walkthrough.ipynb` into `/opt/app-root/src/` inside the workbench.
@@ -350,24 +388,30 @@ Companion script: `notebooks/lab_walkthrough.py`
 
 **Do not open** `lab-otel-collector.lab-observability.svc.cluster.local` in a browser — that DNS name only works **inside** the cluster.
 
-Observe → **Alerting / Metrics / Dashboards / Targets** is the default monitoring UI. **Observe → Traces** appears only after TempoMonolithic + the Distributed Tracing UIPlugin are installed (this lab’s `lab-observability` app). Hard-refresh the console (or log out/in) if Traces is missing after those resources are Ready.
+Observe → **Alerting / Metrics / Dashboards / Targets** is the default monitoring UI. **Observe → Traces** appears only after:
+
+1. `TempoMonolithic` + collector are Ready in `lab-observability` (GitOps path `manifests/observability/`), and  
+2. Cluster-scoped `UIPlugin/distributed-tracing` is Available (Cluster Observability Operator; **not** part of the Argo kustomize).
+
+Hard-refresh the OpenShift console (`Cmd/Ctrl + Shift + R`) or log out/in if Traces is missing after those resources are Ready.
 
 ### 10.1 One-time setup (if Traces is missing)
 
 ```bash
-# Tempo backend + collector wiring (GitOps sync or):
+# Tempo backend + collector + Tempo write RBAC (GitOps sync or):
 oc apply -k manifests/observability/
 
-# Adds Observe → Traces in the console (Cluster Observability Operator)
+# Cluster-scoped — adds Observe → Traces (requires Cluster Observability Operator)
 oc apply -f manifests/observability/uiplugin-distributed-tracing.yaml
 
-oc get tempomonolithic,opentelemetrycollector,uiplugin -n lab-observability
+oc get tempomonolithic,opentelemetrycollector -n lab-observability
+oc get uiplugin distributed-tracing
 oc get route -n lab-observability
 ```
 
-Wait until `TempoMonolithic/lab` and `OpenTelemetryCollector/lab-otel` are Ready and UIPlugin `distributed-tracing` is Available. Hard-refresh the OpenShift console — you should see **Observe → Traces**.
+Wait until `TempoMonolithic/lab` and `OpenTelemetryCollector/lab-otel` are Ready and `UIPlugin/distributed-tracing` is Available. Hard-refresh the OpenShift console — you should see **Observe → Traces**.
 
-Use the **Jaeger UI** Route in `lab-observability` as a fallback if the console Traces tab is delayed.
+Use the **Jaeger UI** Route in `lab-observability` (`tempo-lab-jaegerui`) as a fallback if the console Traces tab is delayed.
 
 ### 10.2 Generate and view traces
 
@@ -381,7 +425,8 @@ Agents export OTLP HTTP **in-cluster** to the lab collector:
 http://lab-otel-collector.lab-observability.svc.cluster.local:4318
 ```
 
-The collector forwards traces to Tempo via the gateway (`tempo-lab-gateway…:4317`) with TLS, the collector ServiceAccount bearer token, and tenant header `X-Scope-OrgID: lab`.
+The collector forwards traces to Tempo via the gateway (`tempo-lab-gateway.lab-observability.svc.cluster.local:4317`) with TLS (`service-ca.crt`), the collector ServiceAccount bearer token, and tenant header `X-Scope-OrgID: lab`.
+
 ---
 
 ## Step 11 — Load-bearing test (from your laptop)
@@ -402,7 +447,14 @@ oc delete -f .argocd/root-application.yaml
 oc delete applications.argoproj.io -n openshift-gitops -l app.kubernetes.io/part-of=auto-redaction-agent
 oc delete project redaction-agent discovery-agent minio mcp-gateway lab-observability
 # Keep rhoai-models if you want to reuse catalog deployments
+
+# Cluster-scoped leftovers from tracing (optional):
+oc delete uiplugin distributed-tracing --ignore-not-found
+oc delete clusterrole lab-tempo-traces-write --ignore-not-found
+oc delete clusterrolebinding lab-otel-collector-tempo-write --ignore-not-found
 ```
+
+Local leftovers (not on the cluster): `secrets/local/`, `scratch/datasets/`.
 
 ---
 
@@ -412,7 +464,7 @@ oc delete project redaction-agent discovery-agent minio mcp-gateway lab-observab
 UI (tabs) → Redaction API + Discovery API
          → MinIO (raw / redacted / vector-index / discovery-index)
          → Catalog SLM + Embeddings (rhoai-models)
-         → OTel Collector → Observability Tempo UI
+         → OTel Collector → Tempo gateway (tenant lab) → Observe → Traces / Jaeger UI
 ```
 
 ---
@@ -421,28 +473,33 @@ UI (tabs) → Redaction API + Discovery API
 
 | Script | Purpose |
 |--------|---------|
-| `check_prerequisites.sh` | Gate: AI, GitOps, **NFD**, GPU, Observability, Storage |
+| `check_prerequisites.sh` | Gate: AI, GitOps, **NFD**, GPU, Tempo/OTel/Cluster Observability; Storage fails only with `--non-cloud` |
 | `discover_catalog_models.sh` | Resolve `LLM_*` / `EMBEDDING_*` from Ready catalog predictors |
 | `configure_gitops_repo.sh` | Set Argo `repoURL` |
-| `setup_minio.sh` | Generate/apply MinIO root + lab-user Secrets |
+| `setup_minio.sh` | Generate/apply MinIO root + lab-user Secrets (not buckets) |
 | `setup_workbench.sh` | Step 9: copy `lab_walkthrough.ipynb` into a UI-created workbench |
-| `deploy_lab.sh` | Check + secrets + apply root Application |
+| `deploy_lab.sh` | Prereq + secrets + NS label/admin + root Application + force sync |
 | `fetch_dataset.sh` | HF → `scratch/datasets/` |
-| `seed_minio.sh` | Upload synthetic + scratch PDFs |
-| `smoke_test.sh` | Health + list docs |
-| `run_load_test.sh` | Locust load test |
+| `seed_minio.sh` | Upload synthetic + scratch PDFs (falls back to MinIO root if lab user missing) |
+| `smoke_test.sh` | Redaction health + `/documents`; discovery health + `/search` if route exists |
+| `run_load_test.sh` | Locust: `/documents`, `/redact`, discovery `/search` |
+
+Optional / advanced: `generate_local_secrets.sh` (secrets without apply), `setup_minio_buckets.sh` (laptop `mc` helper — prefer the in-cluster PostSync Job).
 
 ---
 
 ## Configuration reference
 
-| Variable | Meaning |
-|----------|---------|
-| `S3_*` | MinIO endpoint + buckets (lab-user Secret) |
-| `LLM_*` / `EMBEDDING_*` | Catalog InferenceServices |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Lab collector |
-| `VECTOR_COLLECTION` | `redaction-events` |
-| `DISCOVERY_COLLECTION` | `discovery-events` |
+| Variable | Where | Meaning |
+|----------|-------|---------|
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `minio-lab-user` Secret (mirrored) | Lab S3 credentials |
+| `S3_ENDPOINT_URL`, `S3_*_BUCKET`, `S3_SECURE` | Agent / discovery / mcp ConfigMaps | MinIO endpoint + bucket names |
+| `S3_DISCOVERY_BUCKET` | Discovery ConfigMap | `discovery-index` |
+| `LLM_*` / `EMBEDDING_*` | Agent / discovery / mcp ConfigMaps | Catalog InferenceServices (`lab-slm` / `lab-embed`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Agent / discovery / mcp ConfigMaps | Lab collector (`…:4318`) |
+| `VECTOR_COLLECTION` | ConfigMaps | `redaction-events` |
+| `DISCOVERY_COLLECTION` | ConfigMaps | `discovery-events` |
+| `REDACT_API_URL` / `DISCOVERY_API_URL` | Web UI ConfigMap / workbench env | In-cluster API URLs |
 
 ---
 
