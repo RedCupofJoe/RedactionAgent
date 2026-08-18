@@ -308,32 +308,39 @@ Smoke test from laptop:
 
 ## Step 9 — Jupyter workbench notebook
 
-Automate this before a live demo:
+Create the workbench in the **OpenShift AI UI**, then seed the walkthrough notebook from your laptop.
+
+### 9.1 Create the workbench (UI)
+
+1. Open the OpenShift AI dashboard (`rhods-dashboard` Route in `redhat-ods-applications`).
+2. Open (or create) Data Science project **`rhoai-models`**.
+3. **Create workbench** with:
+   - **Name:** anything memorable (e.g. `lab-walkthrough`)
+   - **Image:** **Jupyter | Data Science | CPU | Python 3.12** (latest / 2025.2 or 3.4 is fine)
+   - **Size:** Small is enough for the API demo
+4. Start the workbench and wait until status is **Running**.
+5. Optional: add environment variables (otherwise the notebook uses in-cluster defaults):
+   - `REDACT_API_URL` = `http://redaction-agent.redaction-agent.svc.cluster.local:8000`
+   - `DISCOVERY_API_URL` = `http://discovery-agent.discovery-agent.svc.cluster.local:8001`
+
+### 9.2 Seed the walkthrough file
+
+From this repo (workbench must be Running):
 
 ```bash
 ./scripts/setup_workbench.sh
+# If you have more than one workbench:
+./scripts/setup_workbench.sh --name <workbench-name>
+./scripts/setup_workbench.sh --list
 ```
 
-That script:
+That copies `notebooks/lab_walkthrough.ipynb` into `/opt/app-root/src/` inside the workbench.
 
-1. Labels `rhoai-models` as an OpenShift AI Data Science project  
-2. Creates PVC + **Workbench** (`Notebook` CR) with in-cluster `REDACT_API_URL` / `DISCOVERY_API_URL`  
-3. Waits until Running, copies `notebooks/lab_walkthrough.ipynb` into the workbench home  
-4. Prints dashboard / notebook URLs and a short talk track  
+### 9.3 Run the demo
 
-Useful flags:
-
-```bash
-./scripts/setup_workbench.sh --seed-only   # re-copy notebook into an existing workbench
-./scripts/setup_workbench.sh --delete      # tear down workbench + PVC
-```
-
-Manual alternative:
-
-1. In OpenShift AI, create a **Workbench** (Python / Standard Data Science) in `rhoai-models`  
-2. Upload `notebooks/lab_walkthrough.ipynb`  
-3. Set `REDACT_API_URL` / `DISCOVERY_API_URL` to Routes **or** use the in-cluster DNS defaults  
-4. Run all cells — health, list docs, redact, discovery  
+1. Open the workbench from the dashboard  
+2. Open `lab_walkthrough.ipynb`  
+3. Run all cells — health, list docs, redact, discovery  
 
 Companion script: `notebooks/lab_walkthrough.py`
 
@@ -341,19 +348,40 @@ Companion script: `notebooks/lab_walkthrough.py`
 
 ## Step 10 — View OpenTelemetry traces
 
-1. Confirm collector: `oc get opentelemetrycollector -n lab-observability`  
-2. Generate traffic (UI or smoke test)  
-3. Open the **Observability / Tempo** UI from the OpenShift console  
-4. Filter services: `redaction-agent`, `discovery-agent`  
+**Do not open** `lab-otel-collector.lab-observability.svc.cluster.local` in a browser — that DNS name only works **inside** the cluster.
 
-Agents send OTLP HTTP to:
+Observe → **Alerting / Metrics / Dashboards / Targets** is the default monitoring UI. **Observe → Traces** appears only after TempoMonolithic + the Distributed Tracing UIPlugin are installed (this lab’s `lab-observability` app). Hard-refresh the console (or log out/in) if Traces is missing after those resources are Ready.
+
+### 10.1 One-time setup (if Traces is missing)
+
+```bash
+# Tempo backend + collector wiring (GitOps sync or):
+oc apply -k manifests/observability/
+
+# Adds Observe → Traces in the console (Cluster Observability Operator)
+oc apply -f manifests/observability/uiplugin-distributed-tracing.yaml
+
+oc get tempomonolithic,opentelemetrycollector,uiplugin -n lab-observability
+oc get route -n lab-observability
+```
+
+Wait until `TempoMonolithic/lab` and `OpenTelemetryCollector/lab-otel` are Ready and UIPlugin `distributed-tracing` is Available. Hard-refresh the OpenShift console — you should see **Observe → Traces**.
+
+Use the **Jaeger UI** Route in `lab-observability` as a fallback if the console Traces tab is delayed.
+
+### 10.2 Generate and view traces
+
+1. Generate traffic (Streamlit UI, workbench notebook, or `./scripts/smoke_test.sh`)  
+2. Open **Observe → Traces**, select Tempo instance **lab** / tenant **lab**, filter services `redaction-agent` / `discovery-agent`  
+3. Or open the **Jaeger UI** Route in `lab-observability` (same traces)
+
+Agents export OTLP HTTP **in-cluster** to the lab collector:
 
 ```text
 http://lab-otel-collector.lab-observability.svc.cluster.local:4318
 ```
 
-If traces never appear, check Tempo distributor DNS in `manifests/observability/otel-collector.yaml`.
-
+The collector forwards traces to Tempo via the gateway (`tempo-lab-gateway…:4317`) with TLS, the collector ServiceAccount bearer token, and tenant header `X-Scope-OrgID: lab`.
 ---
 
 ## Step 11 — Load-bearing test (from your laptop)
@@ -397,7 +425,7 @@ UI (tabs) → Redaction API + Discovery API
 | `discover_catalog_models.sh` | Resolve `LLM_*` / `EMBEDDING_*` from Ready catalog predictors |
 | `configure_gitops_repo.sh` | Set Argo `repoURL` |
 | `setup_minio.sh` | Generate/apply MinIO root + lab-user Secrets |
-| `setup_workbench.sh` | Step 9: create RHOAI workbench + seed walkthrough notebook |
+| `setup_workbench.sh` | Step 9: copy `lab_walkthrough.ipynb` into a UI-created workbench |
 | `deploy_lab.sh` | Check + secrets + apply root Application |
 | `fetch_dataset.sh` | HF → `scratch/datasets/` |
 | `seed_minio.sh` | Upload synthetic + scratch PDFs |

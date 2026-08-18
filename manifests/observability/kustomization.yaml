@@ -5,5 +5,9 @@ namespace: lab-observability
 
 resources:
   - namespace.yaml
+  - tempo-monolithic.yaml
+  - tempo-rbac.yaml
   - otel-collector.yaml
   - README-configmap.yaml
+  # Cluster-scoped — applied without kustomize namespace stamp:
+  #   oc apply -f manifests/observability/uiplugin-distributed-tracing.yaml

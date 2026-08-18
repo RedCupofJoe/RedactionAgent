@@ -1,0 +1,9 @@
+# Adds Observe → Traces in the OpenShift console (Cluster Observability Operator).
+apiVersion: observability.openshift.io/v1alpha1
+kind: UIPlugin
+metadata:
+  name: distributed-tracing
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+spec:
+  type: DistributedTracing

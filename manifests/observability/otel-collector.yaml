@@ -10,6 +10,9 @@ metadata:
 spec:
   mode: deployment
   config:
+    extensions:
+      bearertokenauth:
+        filename: /var/run/secrets/kubernetes.io/serviceaccount/token
     receivers:
       otlp:
         protocols:
@@ -24,14 +27,21 @@ spec:
         limit_percentage: 75
         spike_limit_percentage: 15
     exporters:
-      # Adjust if your Tempo distributor DNS differs after Observability install.
+      # TempoMonolithic "lab" gateway (OpenShift multi-tenant). Tenant header: lab
+      # Gateway requires TLS + OpenShift SA bearer token (not tls.insecure).
       otlp/tempo:
-        endpoint: tempo-tempostack-distributor.openshift-tempo-operator.svc.cluster.local:4317
+        endpoint: tempo-lab-gateway.lab-observability.svc.cluster.local:4317
         tls:
-          insecure: true
+          insecure: false
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        auth:
+          authenticator: bearertokenauth
+        headers:
+          X-Scope-OrgID: lab
       debug:
         verbosity: basic
     service:
+      extensions: [bearertokenauth]
       pipelines:
         traces:
           receivers: [otlp]

@@ -14,9 +14,14 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: lab-observability
+  # Automated sync disabled until gateway/TLS collector config is on main.
+  # Manual: oc apply -k manifests/observability/
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
+  ignoreDifferences:
+    - group: opentelemetry.io
+      kind: OpenTelemetryCollector
+      name: lab-otel
+      jqPathExpressions:
+        - .spec.config

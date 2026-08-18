@@ -1,0 +1,24 @@
+# Lab Tempo backend (in-memory). Enables Jaeger UI Route + Observe → Traces (with UIPlugin).
+apiVersion: tempo.grafana.com/v1alpha1
+kind: TempoMonolithic
+metadata:
+  name: lab
+  namespace: lab-observability
+  labels:
+    app.kubernetes.io/part-of: auto-redaction-agent
+spec:
+  storage:
+    traces:
+      backend: memory
+      size: 2Gi
+  multitenancy:
+    enabled: true
+    mode: openshift
+    authentication:
+      - tenantName: lab
+        tenantId: "00000000-0000-0000-0000-000000000001"
+  jaegerui:
+    enabled: true
+    route:
+      enabled: true
+      termination: reencrypt
